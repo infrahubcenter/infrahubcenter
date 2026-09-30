@@ -447,6 +447,12 @@ get("/api/me/settings", (): MeSettings => ({ name: currentUser.name, email: curr
 get("/api/settings/platform", (): PlatformSettings => ({ platform_name: "Infra Hub Center (Demo)", vm_monitor_interval: "30s", vm_monitor_retention_days: 3, docker_metrics_interval: "15s", database_metrics_interval: "30s", database_metrics_retention_days: 3, object_storage_metrics_interval: "5m", alert_eval_interval: "30s", access_token_ttl_minutes: 15, refresh_token_ttl_days: 7, cookie_secure: true, login_rate_limit_attempts: 5, login_rate_limit_window: "15m", max_request_body_bytes: 10 * MiB, github_oauth_configured: false, google_oauth_configured: false, smtp_configured: true, is_owner: true }));
 get("/api/settings/signin-methods", () => ({ github_client_id: "", github_secret_set: false, google_client_id: "", google_secret_set: false, smtp_host: "smtp.northwind.example", smtp_port: 587, smtp_username: "alerts@northwind.example", smtp_password_set: true, smtp_from_email: "alerts@northwind.example", smtp_use_tls: true }));
 
+// plan: the sample company runs Business
+get("/api/license", () => ({
+  license: { plan: { id: "business", name: "Business", limits: { vms: 100, databases: 50, object_storage: 25, docker_hosts: 50, k8s_clusters: 15, users: -1 }, metrics_retention_days: 90, log_retention_days: 30 }, licensee: "Northwind Cloud (demo)", expires_at: new Date(Date.now() + 200 * 86_400_000).toISOString(), status: "active" },
+  usage: { vms: VMS.length, databases: DATABASES.length, object_storage: STORAGES.length, docker_hosts: DOCKER_HOSTS.length, k8s_clusters: K8S_CLUSTERS.length, users: TEAM.filter((u) => u.is_active).length + 1 },
+}));
+
 // workspaces, users, permissions
 get("/api/workspaces", () => ({ workspaces: WORKSPACES }));
 get("/api/workspaces/:id", (m) => WORKSPACES.find((w) => w.id === m[1]) ?? WORKSPACES[0]);

@@ -22,4 +22,4 @@ export const APP_RELEASE_CHANNEL = "Stable";
 // Public marketing / pricing site (infrahub-site/). Linked from Plans &
 // Billing's "Compare plans" button. Set per deployment with
 // INFRAHUB_MARKETING_URL (read at runtime, see lib/runtime-config.ts).
-export const MARKETING_URL = runtimeConfig().marketingUrl ?? "http://localhost:3002";
+export const MARKETING_URL = runtimeConfig().marketingUrl ?? "https://infrahub-site.vercel.app";

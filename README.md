@@ -17,7 +17,7 @@ Alerting & Incidents, RBAC, Audit Trail and Settings. It runs entirely on **samp
   database (`demo_users`), and the features they tried go to `demo_events`.
 
 To run Infra Hub Center on your own infrastructure, see
-https://infrahub-site.vercel.app/#quick-start.
+https://infrahub-site.vercel.app/install.
 
 ## Configuration (Vercel project `infrahubcentre`)
 

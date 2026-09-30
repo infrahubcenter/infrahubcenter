@@ -7,7 +7,7 @@ import { DEMO_BLOCKED_EVENT, describeAction, type DemoBlockedDetail } from "@/li
 import { installDemoWebSocket } from "@/lib/demo/fake-ws";
 
 export const SITE_URL = "https://infrahub-site.vercel.app";
-export const INSTALL_URL = `${SITE_URL}/#quick-start`;
+export const INSTALL_URL = `${SITE_URL}/install`;
 
 // Mounted once in the root layout: swaps in the demo's live streams and
 // shows the install prompt whenever a visitor tries to change something.
