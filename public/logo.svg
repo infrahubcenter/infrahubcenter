@@ -1,17 +1,45 @@
 <svg width="216" height="40" viewBox="0 0 216 40" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Infra Hub Center">
+  <g transform="scale(0.8333333)">
   <defs>
-    <linearGradient id="ihc-logo-bg" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#38bdf8"/>
-      <stop offset="1" stop-color="#0369a1"/>
-    </linearGradient>
-  </defs>
-  <rect width="40" height="40" rx="9" fill="url(#ihc-logo-bg)"/>
-  <rect x="9" y="11" width="22" height="5.5" rx="2" fill="#ffffff"/>
-  <rect x="9" y="17.25" width="22" height="5.5" rx="2" fill="#ffffff" fill-opacity="0.82"/>
-  <rect x="9" y="23.5" width="22" height="5.5" rx="2" fill="#ffffff" fill-opacity="0.62"/>
-  <circle cx="13" cy="13.75" r="1.15" fill="#0369a1"/>
-  <circle cx="13" cy="20" r="1.15" fill="#0369a1"/>
-  <circle cx="13" cy="26.25" r="1.15" fill="#0369a1"/>
-  <circle cx="31" cy="10" r="4.5" fill="#34d399" stroke="#f0fdf4" stroke-width="1.5"/>
+      <linearGradient id="ihc-logo-tile" x1="2" y1="2" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#0ea5e9"/>
+        <stop offset="0.55" stop-color="#2563eb"/>
+        <stop offset="1" stop-color="#4f46e5"/>
+      </linearGradient>
+      <radialGradient id="ihc-logo-core" cx="24" cy="22" r="8" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#ffffff"/>
+        <stop offset="1" stop-color="#dbeafe"/>
+      </radialGradient>
+    </defs>
+    <rect width="48" height="48" rx="12" fill="url(#ihc-logo-tile)"/>
+    <circle cx="24" cy="24" r="13.5" stroke="#ffffff" stroke-opacity="0.3" stroke-width="1.6"/>
+    <g stroke="#ffffff" stroke-opacity="0.8" stroke-width="1.8" stroke-linecap="round">
+      <path d="M24 17.6V13.8"/>
+      <path d="M30.4 24H33.2"/>
+      <path d="M24 30.4V33.6"/>
+      <path d="M17.6 24H14.8"/>
+    </g>
+    <!-- servers / VMs -->
+    <rect x="18.6" y="6.4" width="10.8" height="7.6" rx="2" fill="#ffffff"/>
+    <rect x="20.6" y="8.9" width="4.6" height="1.1" rx="0.55" fill="#2563eb"/>
+    <rect x="20.6" y="10.9" width="4.6" height="1.1" rx="0.55" fill="#2563eb" fill-opacity="0.6"/>
+    <circle cx="27.3" cy="10.2" r="0.9" fill="#10b981"/>
+    <!-- Kubernetes -->
+    <path d="M38.2 19.1l4.3 2.45v4.9l-4.3 2.45-4.3-2.45v-4.9z" fill="#ffffff"/>
+    <circle cx="38.2" cy="24" r="1.5" fill="#4f46e5"/>
+    <!-- databases -->
+    <path d="M19.2 35.2v5.2c0 1.05 2.15 1.9 4.8 1.9s4.8-.85 4.8-1.9v-5.2c0-1.05-2.15-1.9-4.8-1.9s-4.8.85-4.8 1.9z" fill="#ffffff"/>
+    <path d="M19.2 35.2c0 1.05 2.15 1.9 4.8 1.9s4.8-.85 4.8-1.9" stroke="#2563eb" stroke-opacity="0.55" stroke-width="0.9"/>
+    <!-- Docker containers -->
+    <rect x="5.4" y="19.6" width="4" height="4" rx="0.9" fill="#ffffff"/>
+    <rect x="10.2" y="19.6" width="4" height="4" rx="0.9" fill="#ffffff" fill-opacity="0.85"/>
+    <rect x="5.4" y="24.4" width="4" height="4" rx="0.9" fill="#ffffff" fill-opacity="0.85"/>
+    <rect x="10.2" y="24.4" width="4" height="4" rx="0.9" fill="#ffffff"/>
+    <!-- monitoring core with a live pulse -->
+    <circle cx="24" cy="24" r="6.6" fill="url(#ihc-logo-core)"/>
+    <path d="M19.4 24.3h2.1l1.3-2.7 2.1 5.2 1.4-2.5h2.3" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- live status -->
+    <circle cx="40.2" cy="7.8" r="3.6" fill="#34d399" stroke="#ecfdf5" stroke-width="1.4"/>
+  </g>
   <text x="52" y="26" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" fill="#0f172a" letter-spacing="-0.2">Infra Hub Center</text>
 </svg>
