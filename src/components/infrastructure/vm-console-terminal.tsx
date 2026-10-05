@@ -145,36 +145,32 @@ function ConnectedTerminal({
       fontSize: 14,
       lineHeight: 1.2,
       fontFamily: "var(--font-mono, ui-monospace, monospace)",
-      // A background-only theme leaves every ANSI color slot on xterm.js's
-      // own built-in default palette, which is tuned for a pure-black
-      // background -- washed out and low-contrast against this app's navy
-      // (#0f172a). Defining the full 16-color ANSI set explicitly (a
-      // standard, high-contrast palette matching common terminal emulators
-      // like MobaXterm/iTerm) is what actually makes colored output --
-      // `ls --color`, a git prompt, red/green success-or-failure text --
-      // render distinctly instead of all blending into one washed-out hue.
+      // Classic terminal look, like the AWS browser console and MobaXterm:
+      // pure black background, white text, and a full high-contrast 16-color
+      // ANSI palette so colored output (Ubuntu's green user@host prompt, blue
+      // directories in `ls --color`, red errors) stays bright and distinct.
       theme: {
-        background: "#0f172a",
-        foreground: "#e2e8f0",
-        cursor: "#e2e8f0",
-        cursorAccent: "#0f172a",
-        selectionBackground: "#334155",
-        black: "#1e293b",
-        red: "#f87171",
-        green: "#4ade80",
-        yellow: "#fbbf24",
-        blue: "#60a5fa",
-        magenta: "#c084fc",
-        cyan: "#22d3ee",
-        white: "#e2e8f0",
-        brightBlack: "#64748b",
-        brightRed: "#fca5a5",
-        brightGreen: "#86efac",
-        brightYellow: "#fde047",
-        brightBlue: "#93c5fd",
-        brightMagenta: "#d8b4fe",
-        brightCyan: "#67e8f9",
-        brightWhite: "#f8fafc",
+        background: "#000000",
+        foreground: "#ffffff",
+        cursor: "#ffffff",
+        cursorAccent: "#000000",
+        selectionBackground: "#4d4d4d",
+        black: "#000000",
+        red: "#f14c4c",
+        green: "#23d18b",
+        yellow: "#f5f543",
+        blue: "#3b8eea",
+        magenta: "#d670d6",
+        cyan: "#29b8db",
+        white: "#e5e5e5",
+        brightBlack: "#767676",
+        brightRed: "#ff6b6b",
+        brightGreen: "#5af78e",
+        brightYellow: "#ffff6b",
+        brightBlue: "#6cb6ff",
+        brightMagenta: "#ff7bff",
+        brightCyan: "#5ee7ff",
+        brightWhite: "#ffffff",
       },
       scrollback: 5000,
     });
@@ -336,7 +332,7 @@ function ConnectedTerminal({
       <div
         ref={containerRef}
         style={contentStyle}
-        className={`w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-950 p-2 ${contentClassName}`}
+        className={`w-full overflow-hidden rounded-lg border border-neutral-800 bg-black p-2 ${contentClassName}`}
       />
       <ResizeHandle hidden={fullscreen} {...resizeHandleProps} />
     </div>
