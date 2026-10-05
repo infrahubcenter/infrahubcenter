@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useNavPathname } from "@/lib/nav-context";
 import { LogOut } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,7 +38,7 @@ function currentPageLabel(pathname: string, navItems: ReturnType<typeof navItems
 }
 
 export function Header() {
-  const pathname = usePathname();
+  const pathname = useNavPathname();
   const router = useRouter();
   const { user, logout } = useAuth();
   const navItems = navItemsForRole(user?.role);

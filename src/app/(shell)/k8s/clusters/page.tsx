@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Layers, Plug, RefreshCw, Trash2 } from "lucide-react";
 import { RouteGuard } from "@/components/auth/route-guard";
 import { DeleteResourceDialog } from "@/components/infrastructure/delete-resource-dialog";
-import { CopyButton } from "@/components/infrastructure/copy-button";
+import { CommandBlock } from "@/components/infrastructure/copy-button";
 import { InstallNotes } from "@/components/infrastructure/install-notes";
 import { K8S_PERMISSION_NOTES } from "@/lib/agent-install-command";
 import { K8sConnectionStatusBadge } from "@/components/infrastructure/k8s-status-badge";
@@ -294,20 +294,14 @@ function AgentTokenReveal({
     <Alert>
       <AlertDescription>
         <p className="mb-2">
-          Agent token for <strong>{clusterName}</strong> (shown once -- it cannot be retrieved again):
+          Agent token for <strong>{clusterName}</strong> (shown once; it can&apos;t be retrieved again):
         </p>
-        <div className="flex items-center gap-2">
-          <code className="block flex-1 break-all rounded bg-slate-100 p-2 text-xs">{token}</code>
-          <CopyButton value={token} />
-        </div>
+        <CommandBlock label="Agent token" value={token} wrap />
         <p className="mt-2 text-xs text-slate-500">
           Run this on any machine with <code>kubectl</code> pointed at the target cluster -- no local checkout of
           this app needed, the manifest is applied straight from its public repo:
         </p>
-        <div className="mt-1 flex items-start gap-2">
-          <pre className="flex-1 overflow-x-auto rounded bg-slate-900 p-2 text-xs text-slate-100">{k8sInstallCommand}</pre>
-          <CopyButton value={k8sInstallCommand} />
-        </div>
+        <CommandBlock className="mt-1" label="Install command" value={k8sInstallCommand} />
         <InstallNotes notes={K8S_PERMISSION_NOTES} />
         <p className="mt-2 text-xs text-slate-500">
           Already ran this before and got &quot;AlreadyExists&quot; on the namespace/secret? That&apos;s fine to

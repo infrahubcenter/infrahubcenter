@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { CopyButton } from "@/components/infrastructure/copy-button";
+import { CommandBlock } from "@/components/infrastructure/copy-button";
 import { DeleteResourceDialog } from "@/components/infrastructure/delete-resource-dialog";
 import { VMAgentInstallSection } from "@/components/infrastructure/vm-agent-install-section";
 import { buildAgentInstallCommand, defaultInstallMethodFor, vmAgentPermissionNotes, type AgentOS, type AgentInstallMethod } from "@/lib/agent-install-command";
@@ -244,12 +244,9 @@ function AgentTokenReveal({
     <Alert>
       <AlertDescription>
         <p className="mb-2">
-          Agent token for <strong>{vmName}</strong> (shown once -- it cannot be retrieved again):
+          Agent token for <strong>{vmName}</strong> (shown once; it can&apos;t be retrieved again):
         </p>
-        <div className="flex items-center gap-2">
-          <code className="block flex-1 break-all rounded bg-slate-100 p-2 text-xs">{token}</code>
-          <CopyButton value={token} />
-        </div>
+        <CommandBlock label="Agent token" value={token} wrap />
         <div className="mt-3 flex flex-wrap gap-3">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="connect-os-reveal-os">Target OS</Label>
@@ -289,10 +286,7 @@ function AgentTokenReveal({
           </p>
         )}
         <p className="mt-2 text-xs text-slate-500">{runHint(os, method)}</p>
-        <div className="mt-1 flex items-start gap-2">
-          <pre className="flex-1 overflow-x-auto whitespace-pre rounded bg-slate-900 p-2 text-xs text-slate-100">{runCommand}</pre>
-          <CopyButton value={runCommand} />
-        </div>
+        <CommandBlock className="mt-1" label="Install command" value={runCommand} />
         <InstallNotes notes={vmAgentPermissionNotes(os, method)} />
         <Button variant="ghost" size="sm" className="mt-2" onClick={onDismiss}>
           Dismiss

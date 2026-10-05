@@ -550,7 +550,7 @@ const vmUpdates = (id: string) => {
 get("/api/vms/:id/updates", (m) => vmUpdates(m[1]));
 get("/api/vms/:id/updates/summary", (m) => {
   const u = vmUpdates(m[1]);
-  return { os: { current: u.os.current, available: u.os.available, status: u.os.status }, packages: { total_updates: u.package_count, security_updates: u.packages.filter((p) => p.is_security_update).length }, kernel: { running: u.kernel.running, available: u.kernel.available, reboot_required: u.kernel.reboot_required } };
+  return { os: { current: u.os.current, available: u.os.available, status: u.os.status, checked: true }, packages: { total_updates: u.package_count, security_updates: u.packages.filter((p) => p.is_security_update).length }, kernel: { running: u.kernel.running, available: u.kernel.available, reboot_required: u.kernel.reboot_required, reboot_status: u.kernel.reboot_status } };
 });
 get("/api/vms/:id/updates/security", (m) => {
   const s = vmPackageUpdates(m[1]).filter((p) => p.is_security_update);

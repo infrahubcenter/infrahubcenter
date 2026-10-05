@@ -37,6 +37,7 @@ import {
   type UpdatePlanDetail,
   type ValidatePlanResult,
 } from "@/lib/api";
+import { useFromPatch, patchQuery } from "@/lib/nav-context";
 
 const TERMINAL_STATUSES = new Set(["CANCELLED", "COMPLETED", "FAILED", "PARTIAL", "EXECUTING"]);
 const EXECUTABLE_STATUSES = new Set(["READY", "APPROVED"]);
@@ -45,6 +46,7 @@ export default function UpdatePlanDetailPage() {
   const params = useParams<{ id: string; planId: string }>();
   const router = useRouter();
   const vmId = params.id;
+  const fromPatch = useFromPatch();
   const planId = params.planId;
 
   const [plan, setPlan] = useState<UpdatePlanDetail | null>(null);
@@ -137,7 +139,7 @@ export default function UpdatePlanDetailPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <Link href={`/vms/${vmId}/updates`} className="flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
+        <Link href={`/vms/${vmId}/updates${patchQuery(fromPatch)}`} className="flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
           <ArrowLeft className="h-4 w-4" /> Back to Updates
         </Link>
         <div className="flex flex-wrap items-center justify-between gap-3">

@@ -2514,9 +2514,11 @@ export function getVMUpdates(vmId: string) {
 }
 
 export type VMUpdatesSummary = {
-  os: { current?: string; available?: string; status: OSUpdateStatus };
+  // checked: OS/kernel/reboot detection has run at least once.
+  os: { current?: string; available?: string; status: OSUpdateStatus; checked?: boolean };
   packages: { total_updates: number; security_updates: number };
-  kernel: { running?: string; available?: string; reboot_required: boolean };
+  // reboot_status is empty until reboot detection has run.
+  kernel: { running?: string; available?: string; reboot_required: boolean; reboot_status?: RebootStatus | "" };
 };
 
 export function getVMUpdatesSummary(vmId: string) {

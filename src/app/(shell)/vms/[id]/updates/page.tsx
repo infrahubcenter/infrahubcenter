@@ -51,11 +51,13 @@ import {
   type VMDetail,
   isAdminRole,
 } from "@/lib/api";
+import { useFromPatch, patchQuery } from "@/lib/nav-context";
 
 export default function VMUpdatesPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const vmId = params.id;
+  const fromPatch = useFromPatch();
   const { user } = useAuth();
 
   const [vm, setVm] = useState<VMDetail | null>(null);
@@ -165,7 +167,7 @@ export default function VMUpdatesPage() {
     setError(null);
     try {
       const result = await createUpdatePlan(vmId, Array.from(selected).map((package_id) => ({ package_id })));
-      router.push(`/vms/${vmId}/updates/plans/${result.plan.id}`);
+      router.push(`/vms/${vmId}/updates/plans/${result.plan.id}${patchQuery(fromPatch)}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create update plan.");
       setCreating(false);
@@ -193,7 +195,7 @@ export default function VMUpdatesPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <Link href={`/vms/${vmId}`} className="flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
+        <Link href={fromPatch ? `/vms/updates/${vmId}` : `/vms/${vmId}`} className="flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
           <ArrowLeft className="h-4 w-4" /> Back to {vm.name}
         </Link>
         <div className="flex flex-wrap items-center justify-between gap-3">

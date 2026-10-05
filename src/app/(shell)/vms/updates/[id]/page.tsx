@@ -102,7 +102,7 @@ function UpdatesTab({ vmId }: { vmId: string }) {
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-900">OS &amp; Package Updates {summary && <OSUpdateStatusBadge status={summary.os.status} />}</h3>
-        <Button variant="outline" size="sm" render={<Link href={`/vms/${vmId}/updates`} />}>
+        <Button variant="outline" size="sm" render={<Link href={`/vms/${vmId}/updates?from=patch`} />}>
           Open Full Updates Page
         </Button>
       </div>
@@ -112,8 +112,28 @@ function UpdatesTab({ vmId }: { vmId: string }) {
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <SummaryStat label="Package Updates" value={String(summary.packages.total_updates)} />
           <SummaryStat label="Security" value={String(summary.packages.security_updates)} />
-          <SummaryStat label="Kernel" value={summary.kernel.available ? "Update Installed" : "Current"} />
-          <SummaryStat label="Reboot" value={summary.kernel.reboot_required ? "Required" : "Not Required"} />
+          <SummaryStat
+            label="Kernel"
+            value={
+              summary.kernel.available && summary.kernel.available !== summary.kernel.running
+                ? "Newer Installed"
+                : summary.os.checked
+                  ? "Current"
+                  : "Not checked yet"
+            }
+          />
+          <SummaryStat
+            label="Reboot"
+            value={
+              summary.kernel.reboot_required
+                ? "Required"
+                : summary.kernel.reboot_status === "NOT_REQUIRED"
+                  ? "Not Required"
+                  : summary.os.checked
+                    ? "Unknown"
+                    : "Not checked yet"
+            }
+          />
         </div>
       )}
     </div>
@@ -137,7 +157,7 @@ function PackagesTab({ vmId }: { vmId: string }) {
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-900">Packages</h3>
-        <Button variant="outline" size="sm" render={<Link href={`/vms/${vmId}/packages`} />}>
+        <Button variant="outline" size="sm" render={<Link href={`/vms/${vmId}/packages?from=patch`} />}>
           Open Full Packages Page
         </Button>
       </div>

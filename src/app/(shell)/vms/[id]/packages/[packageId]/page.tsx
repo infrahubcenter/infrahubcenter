@@ -16,10 +16,12 @@ import {
   type Package,
   isAdminRole,
 } from "@/lib/api";
+import { useFromPatch, patchQuery } from "@/lib/nav-context";
 
 export default function PackageDetailPage() {
   const params = useParams<{ id: string; packageId: string }>();
   const vmId = params.id;
+  const fromPatch = useFromPatch();
   const packageId = params.packageId;
   const { user } = useAuth();
 
@@ -75,7 +77,7 @@ export default function PackageDetailPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href={`/vms/${vmId}/packages`} className="flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
+      <Link href={`/vms/${vmId}/packages${patchQuery(fromPatch)}`} className="flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
         <ArrowLeft className="h-4 w-4" /> Back to Packages
       </Link>
 

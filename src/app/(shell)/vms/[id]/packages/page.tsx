@@ -35,6 +35,7 @@ import {
   type VMDetail,
   isAdminRole,
 } from "@/lib/api";
+import { useFromPatch, patchQuery } from "@/lib/nav-context";
 
 const STATUS_LABEL: Record<Package["status"], string> = {
   UP_TO_DATE: "Up to Date",
@@ -45,6 +46,7 @@ const STATUS_LABEL: Record<Package["status"], string> = {
 export default function VMPackagesPage() {
   const params = useParams<{ id: string }>();
   const vmId = params.id;
+  const fromPatch = useFromPatch();
   const { user } = useAuth();
 
   const [vm, setVm] = useState<VMDetail | null>(null);
@@ -123,7 +125,7 @@ export default function VMPackagesPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <Link href={`/vms/${vmId}`} className="flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
+        <Link href={fromPatch ? `/vms/updates/${vmId}` : `/vms/${vmId}`} className="flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
           <ArrowLeft className="h-4 w-4" /> Back to {vm.name}
         </Link>
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -199,7 +201,7 @@ export default function VMPackagesPage() {
               {packages.map((pkg) => (
                 <TableRow key={pkg.id}>
                   <TableCell>
-                    <Link href={`/vms/${vmId}/packages/${pkg.id}`} className="font-medium text-sky-700 hover:underline">
+                    <Link href={`/vms/${vmId}/packages/${pkg.id}${patchQuery(fromPatch)}`} className="font-medium text-sky-700 hover:underline">
                       {pkg.name}
                     </Link>
                   </TableCell>

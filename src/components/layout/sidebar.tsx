@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { useNavPathname } from "@/lib/nav-context";
 import { useAuth } from "@/components/auth/auth-provider";
 import { APP_NAME } from "@/lib/branding";
 import { SidebarVersion } from "./sidebar-version";
@@ -8,7 +8,7 @@ import { navItemsForRole } from "./nav-items";
 import { NavList } from "./nav-list";
 
 export function Sidebar() {
-  const pathname = usePathname();
+  const pathname = useNavPathname();
   const { user } = useAuth();
   const navItems = navItemsForRole(user?.role);
 

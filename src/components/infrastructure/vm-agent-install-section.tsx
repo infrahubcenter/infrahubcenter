@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Plug, Radio, RefreshCw } from "lucide-react";
-import { CopyButton } from "@/components/infrastructure/copy-button";
+import { CommandBlock } from "@/components/infrastructure/copy-button";
 import { InstallNotes } from "@/components/infrastructure/install-notes";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -197,12 +197,9 @@ export function VMAgentInstallSection({ vmId }: { vmId: string }) {
         <Alert className="mt-4">
           <AlertDescription>
             <p className="mb-2">
-              Agent token for this VM (shown once -- it cannot be retrieved again):
+              Agent token for this VM (shown once; it can&apos;t be retrieved again):
             </p>
-            <div className="flex items-center gap-2">
-              <code className="block flex-1 break-all rounded bg-slate-100 p-2 text-xs">{manualInfo.token}</code>
-              <CopyButton value={manualInfo.token} />
-            </div>
+            <CommandBlock label="Agent token" value={manualInfo.token} wrap />
             <div className="mt-3 flex flex-wrap gap-3">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="vm-agent-manual-os">Target OS</Label>
@@ -249,12 +246,7 @@ export function VMAgentInstallSection({ vmId }: { vmId: string }) {
               </p>
             )}
             <p className="mt-2 text-xs text-slate-500">{runHint(os, method)}</p>
-            <div className="mt-1 flex items-start gap-2">
-              <pre className="flex-1 overflow-x-auto whitespace-pre rounded bg-slate-900 p-2 text-xs text-slate-100">
-                {buildAgentInstallCommand(os, manualInfo.token, manualInfo.backend_url, method)}
-              </pre>
-              <CopyButton value={buildAgentInstallCommand(os, manualInfo.token, manualInfo.backend_url, method)} />
-            </div>
+            <CommandBlock className="mt-1" label="Install command" value={buildAgentInstallCommand(os, manualInfo.token, manualInfo.backend_url, method)} />
             <InstallNotes notes={vmAgentPermissionNotes(os, method)} />
             <Button variant="ghost" size="sm" className="mt-2" onClick={() => setManualInfo(null)}>
               Dismiss

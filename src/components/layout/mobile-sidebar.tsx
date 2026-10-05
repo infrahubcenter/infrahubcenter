@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { usePathname } from "next/navigation";
+import { useNavPathname } from "@/lib/nav-context";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,7 +18,7 @@ import { NavList } from "./nav-list";
 import { SidebarVersion } from "./sidebar-version";
 
 export function MobileSidebar() {
-  const pathname = usePathname();
+  const pathname = useNavPathname();
   const [open, setOpen] = useState(false);
   const { user } = useAuth();
   const navItems = navItemsForRole(user?.role);
