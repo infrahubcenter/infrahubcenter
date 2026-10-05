@@ -35,6 +35,7 @@ import { formatAgo } from "@/lib/format";
 import {
   ApiError,
   createUpdatePlan,
+  getPackageDiscoveryStatus,
   getVM,
   getVMUpdates,
   listRebootOperationsForVM,
@@ -43,6 +44,7 @@ import {
   requestReboot,
   type KernelInfo,
   type OSUpdateInfo,
+  type PackageDiscoveryRun,
   type PackageUpdate,
   type RebootOperation,
   type UpdateOperation,
@@ -60,6 +62,9 @@ export default function VMUpdatesPage() {
   const [os, setOs] = useState<OSUpdateInfo | null>(null);
   const [kernel, setKernel] = useState<KernelInfo | null>(null);
   const [packages, setPackages] = useState<PackageUpdate[] | null>(null);
+  // Latest package scan (null = never scanned) -- tells "no updates" apart
+  // from "not checked" and "checked against old package lists".
+  const [lastRun, setLastRun] = useState<PackageDiscoveryRun | null | undefined>(undefined);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -79,6 +84,9 @@ export default function VMUpdatesPage() {
         setPackages(res.packages);
       })
       .catch(() => setError("Failed to load updates."));
+    getPackageDiscoveryStatus(vmId)
+      .then((res) => setLastRun(res.runs[0] ?? null))
+      .catch(() => setLastRun(null));
   }, [vmId]);
 
   useEffect(() => {
@@ -165,9 +173,22 @@ export default function VMUpdatesPage() {
   }
 
   if (error) return <p className="text-sm text-red-600">{error}</p>;
-  if (!vm || !os || !kernel || !packages) return <p className="text-sm text-slate-500">Loading&hellip;</p>;
+  if (!vm || !os || !kernel || !packages || lastRun === undefined) return <p className="text-sm text-slate-500">Loading&hellip;</p>;
 
   const securityCount = packages.filter((p) => p.is_security_update).length;
+  // What has actually been checked -- never show a guess as a fact.
+  // os.current is the version only ("24.04.5 LTS"); lead with the distro name.
+  const osName = os.current
+    ? vm.os_name && !os.current.includes(vm.os_name)
+      ? `${vm.os_name} ${os.current}`
+      : os.current
+    : [vm.os_name, vm.os_version].filter(Boolean).join(" ") || "Unknown OS";
+  const runningKernel = kernel.running ?? vm.kernel_version;
+  const osChecked = Boolean(os.detected_at);
+  const updatesChecked = lastRun !== null && lastRun.status !== "FAILED" && lastRun.status !== "RUNNING";
+  const staleLists = lastRun?.status === "PARTIAL";
+  const lastScanAt = lastRun?.completed_at ?? lastRun?.started_at ?? os.detected_at;
+  const rebootKnown = kernel.reboot_status === "REQUIRED" || kernel.reboot_status === "NOT_REQUIRED";
 
   return (
     <div className="flex flex-col gap-6">
@@ -178,11 +199,11 @@ export default function VMUpdatesPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-              {vm.name} <OSUpdateStatusBadge status={os.status} />
+              {vm.name} {os.status !== "UNKNOWN" && <OSUpdateStatusBadge status={os.status} />}
             </h2>
             <p className="text-sm text-slate-500">
-              {os.current ?? vm.os_name ?? "Unknown OS"}
-              {os.detected_at ? ` · Last scan: ${formatAgo(os.detected_at)}` : " · Never scanned"}
+              {osName}
+              {lastScanAt ? ` · Last scan: ${formatAgo(lastScanAt)}` : " · Never scanned"}
             </p>
           </div>
           <div className="flex gap-2">
@@ -248,13 +269,43 @@ export default function VMUpdatesPage() {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         <InfoCard
           label="OS"
-          value={os.status === "UPDATE_AVAILABLE" ? "Patch Available" : os.status === "UP_TO_DATE" ? "Up to Date" : "Unknown"}
-          sub={os.available ? `→ ${os.available}` : undefined}
+          value={
+            os.status === "UPDATE_AVAILABLE"
+              ? "Upgrade Available"
+              : os.status === "UP_TO_DATE"
+                ? "Latest Release"
+                : osChecked
+                  ? "Release check unavailable"
+                  : "Not checked yet"
+          }
+          sub={os.available && os.status === "UPDATE_AVAILABLE" ? `${osName} → ${os.available}` : osName}
         />
-        <InfoCard label="Package Updates" value={String(packages.length)} />
-        <InfoCard label="Security" value={String(securityCount)} tone={securityCount > 0 ? "text-red-600" : undefined} />
-        <InfoCard label="Kernel" value={kernel.available ? "Update Installed" : "Current"} sub={kernel.running} />
-        <InfoCard label="Reboot" value={kernel.reboot_required ? "Required" : "Not Required"} tone={kernel.reboot_required ? "text-red-600" : undefined} />
+        <InfoCard
+          label="Package Updates"
+          value={updatesChecked ? String(packages.length) : "—"}
+          sub={!lastRun ? "Not scanned yet" : lastRun.status === "FAILED" ? "Check failed" : staleLists ? "From cached package lists" : undefined}
+        />
+        <InfoCard
+          label="Security"
+          value={updatesChecked ? String(securityCount) : "—"}
+          tone={updatesChecked && securityCount > 0 ? "text-red-600" : undefined}
+        />
+        <InfoCard
+          label="Kernel"
+          value={
+            kernel.available && kernel.available !== runningKernel
+              ? "Newer Installed"
+              : osChecked
+                ? "Current"
+                : "Not checked yet"
+          }
+          sub={kernel.available && kernel.available !== runningKernel ? `${runningKernel ?? "?"} → ${kernel.available}` : runningKernel}
+        />
+        <InfoCard
+          label="Reboot"
+          value={kernel.reboot_required ? "Required" : rebootKnown ? "Not Required" : osChecked ? "Unknown" : "Not checked yet"}
+          tone={kernel.reboot_required ? "text-red-600" : undefined}
+        />
       </div>
 
       {os.update_type === "RELEASE" && (
@@ -314,9 +365,29 @@ export default function VMUpdatesPage() {
         )}
       </div>
 
+      {lastRun && (lastRun.status === "PARTIAL" || lastRun.status === "FAILED") && lastRun.error_summary && (
+        <Alert variant={lastRun.status === "FAILED" ? "destructive" : undefined}>
+          <AlertDescription>
+            {lastRun.status === "FAILED" && <span className="font-medium">The last update check failed. </span>}
+            {lastRun.error_summary}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {packages.length === 0 ? (
         <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center">
-          <p className="text-sm font-medium text-slate-700">No package updates available.</p>
+          <p className="text-sm font-medium text-slate-700">
+            {!lastRun
+              ? "This VM hasn't been scanned yet."
+              : lastRun.status === "FAILED"
+                ? "Updates couldn't be checked. See the message above."
+                : staleLists
+                  ? "No updates found in the package lists already on the server."
+                  : "No package updates available. All packages are up to date."}
+          </p>
+          {!lastRun && isAdminRole(user?.role) && (
+            <p className="mt-1 text-xs text-slate-500">Click Refresh Updates to scan its packages, OS, kernel and reboot state.</p>
+          )}
         </div>
       ) : (
         <Table>

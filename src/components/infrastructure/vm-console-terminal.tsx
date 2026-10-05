@@ -49,7 +49,10 @@ type ConnectChoice = { mode: "saved" } | { mode: "ephemeral"; privateKey: string
 // any other endpoint. Architecture: Browser --(this WebSocket)--> Go
 // backend --(authorized SSH)--> VM.
 export function VMConsoleTerminal({ vmId, vmName, hasSavedKey }: { vmId: string; vmName: string; hasSavedKey: boolean }) {
-  const [choice, setChoice] = useState<ConnectChoice | null>(null);
+  // A VM with a saved key connects straight away (the open-console
+  // confirmation already happened); the chooser only shows for a keyless VM,
+  // or after Disconnect -- to reconnect or use a different key.
+  const [choice, setChoice] = useState<ConnectChoice | null>(hasSavedKey ? { mode: "saved" } : null);
   // A fresh session number per choice, so ConnectedTerminal always fully
   // remounts (new Terminal instance, new WebSocket) rather than an effect
   // re-running in place -- simplest way to guarantee a clean slate every
@@ -83,17 +86,17 @@ function ConnectChooser({
   return (
     <div className="flex h-[70vh] w-full flex-col items-center justify-center gap-4 rounded-lg border border-slate-200 bg-slate-50 p-8 text-center">
       <p className="text-sm text-slate-600">
-        {hasSavedKey ? <>Ready to connect to <strong>{vmName}</strong>.</> : <><strong>{vmName}</strong> has no saved SSH key -- provide one for this session.</>}
+        {hasSavedKey ? <>Ready to connect to <strong>{vmName}</strong>.</> : <><strong>{vmName}</strong> has no saved SSH key. Provide one for this session.</>}
       </p>
       <div className="flex flex-col items-center gap-3">
         {hasSavedKey && (
           <Button onClick={() => onChoose({ mode: "saved" })}>
-            <KeyRound className="h-4 w-4" /> Use Saved Key
+            <KeyRound className="h-4 w-4" /> Connect with Saved Key
           </Button>
         )}
         <div className="flex flex-col items-center gap-1.5">
           <label htmlFor="console-ephemeral-key" className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-900">
-            <Upload className="h-4 w-4" /> Provide a Key for This Session
+            <Upload className="h-4 w-4" /> {hasSavedKey ? "Or use a different key for this session" : "Provide a key for this session"}
           </label>
           <Input
             id="console-ephemeral-key"
@@ -107,7 +110,7 @@ function ConnectChooser({
               onChoose({ mode: "ephemeral", privateKey: text });
             }}
           />
-          <p className="text-xs text-slate-400">Read from your device, never uploaded or saved -- used only for this session.</p>
+          <p className="text-xs text-slate-400">Read from your device, never uploaded or saved, and used only for this session.</p>
         </div>
       </div>
     </div>
