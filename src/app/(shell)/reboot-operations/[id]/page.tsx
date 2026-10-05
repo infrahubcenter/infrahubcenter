@@ -27,6 +27,7 @@ import {
   type RebootOperation,
   type RebootVerificationResult,
 } from "@/lib/api";
+import { useFromPatch } from "@/lib/nav-context";
 
 const TERMINAL = new Set(["SUCCESS", "PARTIAL", "FAILED", "TIMEOUT", "UNKNOWN", "CANCELLED", "INTERRUPTED"]);
 const CANCELLABLE = new Set(["PENDING", "PRECHECK"]);
@@ -52,6 +53,7 @@ function duration(startedAt?: string, endAt?: string): string {
 export default function RebootOperationDetailPage() {
   const params = useParams<{ id: string }>();
   const operationId = params.id;
+  const fromPatch = useFromPatch();
 
   const [operation, setOperation] = useState<RebootOperation | null>(null);
   const [logs, setLogs] = useState<OperationLogLine[]>([]);
@@ -153,8 +155,12 @@ export default function RebootOperationDetailPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <Link href="/reboot-operations" className="flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
-          <ArrowLeft className="h-4 w-4" /> Back to Reboot Operations
+        <Link
+          href={fromPatch && operation.vm_id ? `/vms/updates/${operation.vm_id}?tab=reboot-history` : "/reboot-operations"}
+          className="flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
+        >
+          <ArrowLeft className="h-4 w-4" />{" "}
+          {fromPatch && operation.vm_id ? `Back to ${operation.vm_name ?? "VM"} (Patch Management)` : "Back to Reboot Operations"}
         </Link>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

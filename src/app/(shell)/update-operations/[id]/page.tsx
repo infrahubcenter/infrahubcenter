@@ -21,6 +21,7 @@ import {
   type OperationStep,
   type UpdateOperation,
 } from "@/lib/api";
+import { useFromPatch } from "@/lib/nav-context";
 
 const TERMINAL = new Set(["SUCCESS", "FAILED", "PARTIAL", "CANCELLED", "INTERRUPTED"]);
 const CANCELLABLE = new Set(["PENDING", "CONNECTING"]);
@@ -38,6 +39,7 @@ const STEP_ORDER: OperationStep["step_type"][] = ["PRECHECK", "CONNECT", "REFRES
 export default function UpdateOperationDetailPage() {
   const params = useParams<{ id: string }>();
   const operationId = params.id;
+  const fromPatch = useFromPatch();
 
   const [operation, setOperation] = useState<UpdateOperation | null>(null);
   const [steps, setSteps] = useState<OperationStep[]>([]);
@@ -149,8 +151,12 @@ export default function UpdateOperationDetailPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <Link href="/update-operations" className="flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
-          <ArrowLeft className="h-4 w-4" /> Back to Update Operations
+        <Link
+          href={fromPatch && operation.vm_id ? `/vms/updates/${operation.vm_id}?tab=update-history` : "/update-operations"}
+          className="flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
+        >
+          <ArrowLeft className="h-4 w-4" />{" "}
+          {fromPatch && operation.vm_id ? `Back to ${operation.vm_name ?? "VM"} (Patch Management)` : "Back to Update Operations"}
         </Link>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

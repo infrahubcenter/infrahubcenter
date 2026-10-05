@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowUpCircle, Boxes, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowUpCircle, Boxes, History, Power, Sparkles } from "lucide-react";
+import { VMRebootHistory, VMUpdateHistory } from "@/components/infrastructure/vm-operation-history";
 import { useAuth } from "@/components/auth/auth-provider";
 import { OSUpdateStatusBadge } from "@/components/infrastructure/update-status-badge";
 import { ConfirmDialog } from "@/components/infrastructure/confirm-dialog";
@@ -31,6 +32,8 @@ import {
 export default function VMUpdatesDetailPage() {
   const params = useParams<{ id: string }>();
   const vmId = params.id;
+  // ?tab= reopens a tab, e.g. when coming Back from an operation's own page.
+  const initialTab = useSearchParams().get("tab") ?? "updates";
 
   const [vm, setVm] = useState<VMDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +51,7 @@ export default function VMUpdatesDetailPage() {
     <div className="flex flex-col gap-6">
       <div>
         <Link href="/vms/updates" className="flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
-          <ArrowLeft className="h-4 w-4" /> Back to Updates
+          <ArrowLeft className="h-4 w-4" /> Back to Patch Management
         </Link>
         <h2 className="mt-1 text-lg font-semibold text-slate-900">{vm.name}</h2>
         <p className="text-sm text-slate-500">
@@ -56,7 +59,7 @@ export default function VMUpdatesDetailPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="updates">
+      <Tabs defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="updates">
             <ArrowUpCircle className="h-3.5 w-3.5" /> Updates
@@ -66,6 +69,12 @@ export default function VMUpdatesDetailPage() {
           </TabsTrigger>
           <TabsTrigger value="baseline">
             <Sparkles className="h-3.5 w-3.5" /> Installed Since Onboarding
+          </TabsTrigger>
+          <TabsTrigger value="update-history">
+            <History className="h-3.5 w-3.5" /> Update History
+          </TabsTrigger>
+          <TabsTrigger value="reboot-history">
+            <Power className="h-3.5 w-3.5" /> Reboot History
           </TabsTrigger>
         </TabsList>
 
@@ -77,6 +86,12 @@ export default function VMUpdatesDetailPage() {
         </TabsContent>
         <TabsContent value="baseline" className="mt-4">
           <BaselineTab vmId={vm.id} />
+        </TabsContent>
+        <TabsContent value="update-history" className="mt-4">
+          <VMUpdateHistory vmId={vm.id} />
+        </TabsContent>
+        <TabsContent value="reboot-history" className="mt-4">
+          <VMRebootHistory vmId={vm.id} />
         </TabsContent>
       </Tabs>
     </div>

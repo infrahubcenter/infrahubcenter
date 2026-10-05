@@ -2,8 +2,8 @@
 
 import { usePathname, useSearchParams } from "next/navigation";
 
-// A VM's Updates/Packages pages are shared by Compute Inventory and Patch
-// Management. Links from Patch Management add ?from=patch, so those pages
+// A VM's Updates/Packages pages (and its update/reboot operations) are
+// shared by Compute Inventory and Patch Management. Links from Patch Management add ?from=patch, so those pages
 // send "Back" to Patch Management and the header/sidebar keep showing
 // Patch Management instead of switching to Compute Inventory.
 export const FROM_PATCH = "patch";
@@ -21,5 +21,9 @@ export function patchQuery(fromPatch: boolean): string {
 export function useNavPathname(): string {
   const pathname = usePathname();
   const fromPatch = useFromPatch();
-  return fromPatch && pathname.startsWith("/vms/") ? `/vms/updates${pathname.slice("/vms".length)}` : pathname;
+  if (!fromPatch) return pathname;
+  if (pathname.startsWith("/vms/")) return `/vms/updates${pathname.slice("/vms".length)}`;
+  // A VM's update/reboot operation opened from its Patch Management history.
+  if (pathname.startsWith("/update-operations/") || pathname.startsWith("/reboot-operations/")) return `/vms/updates${pathname}`;
+  return pathname;
 }
