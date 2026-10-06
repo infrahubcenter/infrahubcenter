@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, type LogSearchResult, type LogSeverity } from "@/lib/api";
-import { LogLineRow, LogThemeToggle, logBoxClass, logMutedClass, useLogTheme } from "@/components/infrastructure/log-lines";
+import { LogDisplayControls, LogLineRow, logBoxClass, logBoxStyle, logMutedClass, useLogSettings } from "@/components/infrastructure/log-lines";
 
 const PAGE_SIZE = 100;
 
@@ -85,7 +85,8 @@ export function LogSearchPanel({
   const [severity, setSeverity] = useState<LogSeverity | "ALL">(initialSeverity ?? "ALL");
   const [showAdvanced, setShowAdvanced] = useState(Boolean(advancedDefault || initialFilters?.from || initialFilters?.to));
   const [result, setResult] = useState<LogSearchResult | null>(null);
-  const [theme, toggleTheme] = useLogTheme();
+  const [settings, updateSettings] = useLogSettings();
+  const theme = settings.theme;
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -250,9 +251,11 @@ export function LogSearchPanel({
               {result.total} matching line{result.total === 1 ? "" : "s"} since{" "}
               {new Date(result.retention_cutoff).toLocaleString()} (retention limit)
             </p>
-            <LogThemeToggle theme={theme} onToggle={toggleTheme} />
+            <div className="flex flex-wrap items-center gap-2">
+              <LogDisplayControls settings={settings} onChange={updateSettings} />
+            </div>
           </div>
-          <div className={`h-[55vh] w-full overflow-y-auto py-1 ${logBoxClass(theme)}`}>
+          <div className={`h-[55vh] w-full overflow-y-auto py-1 ${logBoxClass(theme)}`} style={logBoxStyle(settings)}>
             {result.lines.length === 0 ? (
               <p className={`px-3 py-2 text-xs ${logMutedClass(theme)}`}>No matching log lines in the retained history.</p>
             ) : (

@@ -5,11 +5,20 @@ import { RefreshCw } from "lucide-react";
 import { ExpandToggleButton, ResizeHandle, useExpandablePanel } from "@/components/infrastructure/expandable-panel";
 import { Button } from "@/components/ui/button";
 import { type VMAgentLogsInboundFrame, type LogSeverity } from "@/lib/api";
-import { LogLineRow, LogThemeToggle, logBoxClass, logMutedClass, useLogTheme } from "@/components/infrastructure/log-lines";
+import {
+  LogDisplayControls,
+  LogLineRow,
+  LogRefreshControls,
+  logBoxClass,
+  logBoxStyle,
+  logMutedClass,
+  useBufferedLines,
+  useLogSettings,
+} from "@/components/infrastructure/log-lines";
 
 type ViewerState = "connecting" | "connected" | "error" | "closed";
 
-type ViewerLine = { text: string; severity: LogSeverity; category?: string; suggestion?: string };
+type ViewerLine = { text: string; severity: LogSeverity; category?: string; suggestion?: string; receivedAt: string };
 
 // Live-tail for the VM Agent's OS-level (journald) logs -- structural
 // mirror of DockerLogViewer, just fed from vm-agent/logs/stream instead
@@ -18,12 +27,16 @@ type ViewerLine = { text: string; severity: LogSeverity; category?: string; sugg
 export function VMLogViewer({ streamUrl, vmName }: { streamUrl: string; vmName: string }) {
   const [state, setState] = useState<ViewerState>("connecting");
   const [message, setMessage] = useState<string | null>(null);
-  const [lines, setLines] = useState<ViewerLine[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const autoScrollRef = useRef(true);
   const { fullscreen, toggleFullscreen, contentStyle, contentClassName, panelClassName, resizeHandleProps } = useExpandablePanel(550);
-  const [theme, toggleTheme] = useLogTheme();
+  const [settings, updateSettings] = useLogSettings();
+  const theme = settings.theme;
+  // Pause and the refresh interval only change when lines are shown;
+  // the stream itself stays connected.
+  const buffer = useBufferedLines<ViewerLine>(settings.refresh);
+  const { lines, push: pushLine, reset: resetLines } = buffer;
   // Bumping this forces the connect effect below to tear down whatever
   // WebSocket it has (open, closed, or stuck) and open a fresh one --
   // the manual "Reconnect" escape hatch for "I'm connected but not
@@ -36,9 +49,9 @@ export function VMLogViewer({ streamUrl, vmName }: { streamUrl: string; vmName: 
     // Resets stale state from a previously viewed VM before opening the
     // new one's stream.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLines([]);
     setState("connecting");
     setMessage(null);
+    resetLines();
 
     // See DockerLogViewer's identical guard for why this is needed:
     // React StrictMode (dev only, which is how this app is currently
@@ -63,8 +76,10 @@ export function VMLogViewer({ streamUrl, vmName }: { streamUrl: string; vmName: 
         return;
       }
       if (frame.type === "log") {
-        const entry: ViewerLine = { text: frame.line, severity: frame.severity, category: frame.category, suggestion: frame.suggestion };
-        setLines((prev) => (prev.length > 2000 ? [...prev.slice(prev.length - 2000), entry] : [...prev, entry]));
+        const entry: ViewerLine = { text: frame.line, severity: frame.severity, category: frame.category, suggestion: frame.suggestion,
+          receivedAt: new Date().toISOString(),
+        };
+        pushLine(entry);
       } else if (frame.type === "error") {
         setState("error");
         setMessage(frame.message);
@@ -86,7 +101,7 @@ export function VMLogViewer({ streamUrl, vmName }: { streamUrl: string; vmName: 
       ws.close();
       wsRef.current = null;
     };
-  }, [streamUrl, reconnectKey]);
+  }, [streamUrl, reconnectKey, resetLines, pushLine]);
 
   useEffect(() => {
     if (autoScrollRef.current) {
@@ -94,17 +109,13 @@ export function VMLogViewer({ streamUrl, vmName }: { streamUrl: string; vmName: 
     }
   }, [lines]);
 
-  function handleDisconnect() {
-    wsRef.current?.close();
-  }
-
   function handleReconnect() {
     setReconnectKey((k) => k + 1);
   }
 
   return (
     <div className={`flex flex-col gap-2 ${panelClassName}`}>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm">
           <span
             className={`h-2 w-2 rounded-full ${
@@ -118,19 +129,17 @@ export function VMLogViewer({ streamUrl, vmName }: { streamUrl: string; vmName: 
             {state === "error" && (message ?? "Connection error")}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <LogRefreshControls buffer={buffer} refresh={settings.refresh} onRefreshChange={(refresh) => updateSettings({ refresh })} />
           <Button variant="outline" size="sm" onClick={handleReconnect} title="Force a fresh reconnect -- use this if you expect log output but aren't seeing any">
             <RefreshCw className="mr-1 h-3.5 w-3.5" /> Reconnect
           </Button>
-          <Button variant="outline" size="sm" onClick={handleDisconnect} disabled={state !== "connected"}>
-            Disconnect
-          </Button>
-          <LogThemeToggle theme={theme} onToggle={toggleTheme} />
+          <LogDisplayControls settings={settings} onChange={updateSettings} />
           <ExpandToggleButton fullscreen={fullscreen} onToggle={toggleFullscreen} />
         </div>
       </div>
       <div
-        style={contentStyle}
+        style={{ ...contentStyle, ...logBoxStyle(settings) }}
         className={`w-full overflow-y-auto py-1 ${logBoxClass(theme)} ${contentClassName}`}
         onScroll={(e) => {
           const el = e.currentTarget;
@@ -141,7 +150,7 @@ export function VMLogViewer({ streamUrl, vmName }: { streamUrl: string; vmName: 
           <p className={`px-3 py-2 text-xs ${logMutedClass(theme)}`}>{state === "connected" ? "Waiting for log output…" : ""}</p>
         ) : (
           lines.map((line, i) => (
-            <LogLineRow key={i} text={line.text} severity={line.severity} suggestion={line.suggestion} theme={theme} />
+            <LogLineRow key={i} text={line.text} severity={line.severity} suggestion={line.suggestion} receivedAt={line.receivedAt} theme={theme} />
           ))
         )}
         <div ref={bottomRef} />

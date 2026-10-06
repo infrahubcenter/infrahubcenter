@@ -4,14 +4,23 @@ import { useEffect, useRef, useState } from "react";
 import { ExpandToggleButton, ResizeHandle, useExpandablePanel } from "@/components/infrastructure/expandable-panel";
 import { Button } from "@/components/ui/button";
 import { k8sLogsStreamUrl, type K8sLogsInboundFrame, type LogSeverity } from "@/lib/api";
-import { LogLineRow, LogThemeToggle, logBoxClass, logMutedClass, useLogTheme } from "@/components/infrastructure/log-lines";
+import {
+  LogDisplayControls,
+  LogLineRow,
+  LogRefreshControls,
+  logBoxClass,
+  logBoxStyle,
+  logMutedClass,
+  useBufferedLines,
+  useLogSettings,
+} from "@/components/infrastructure/log-lines";
 
 // Left-border accent per severity -- lets a WARNING/ERROR/CRITICAL line
 // stand out at a glance while scanning fast, on top of the badge and any
 // in-line status-code/keyword highlighting (see LogLineRow in log-lines.tsx).
 type ViewerState = "connecting" | "connected" | "error" | "closed";
 
-type ViewerLine = { text: string; severity: LogSeverity; category?: string; suggestion?: string };
+type ViewerLine = { text: string; severity: LogSeverity; category?: string; suggestion?: string; receivedAt: string };
 
 // Live-tail only (Step 25 decision, mirroring Docker Logs): nothing is
 // stored server-side or in this component's own state beyond what's
@@ -20,24 +29,28 @@ type ViewerLine = { text: string; severity: LogSeverity; category?: string; sugg
 export function K8sLogViewer({ podId, podName }: { podId: string; podName: string }) {
   const [state, setState] = useState<ViewerState>("connecting");
   const [message, setMessage] = useState<string | null>(null);
-  const [lines, setLines] = useState<ViewerLine[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const autoScrollRef = useRef(true);
   // Bumping this re-runs the connect effect below without changing podId
-  // -- the "Reconnect" button's whole job, top-right next to Disconnect
-  // where the stream status already lives.
+  // -- the "Reconnect" button's whole job, top-right where the stream
+  // status already lives.
   const [reconnectNonce, setReconnectNonce] = useState(0);
   const { fullscreen, toggleFullscreen, contentStyle, contentClassName, panelClassName, resizeHandleProps } = useExpandablePanel(550);
-  const [theme, toggleTheme] = useLogTheme();
+  const [settings, updateSettings] = useLogSettings();
+  const theme = settings.theme;
+  // Pause and the refresh interval only change when lines are shown;
+  // the stream itself stays connected.
+  const buffer = useBufferedLines<ViewerLine>(settings.refresh);
+  const { lines, push: pushLine, reset: resetLines } = buffer;
 
   useEffect(() => {
     // Resets stale state from the previously selected pod (or a manual
     // reconnect) before opening a fresh stream.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLines([]);
     setState("connecting");
     setMessage(null);
+    resetLines();
 
     // See DockerLogViewer's identical guard for why this is needed:
     // React StrictMode (dev only, which is how this app is currently
@@ -62,8 +75,10 @@ export function K8sLogViewer({ podId, podName }: { podId: string; podName: strin
         return;
       }
       if (frame.type === "log") {
-        const entry: ViewerLine = { text: frame.line, severity: frame.severity, category: frame.category, suggestion: frame.suggestion };
-        setLines((prev) => (prev.length > 2000 ? [...prev.slice(prev.length - 2000), entry] : [...prev, entry]));
+        const entry: ViewerLine = { text: frame.line, severity: frame.severity, category: frame.category, suggestion: frame.suggestion,
+          receivedAt: new Date().toISOString(),
+        };
+        pushLine(entry);
       } else if (frame.type === "error") {
         setState("error");
         setMessage(frame.message);
@@ -85,7 +100,7 @@ export function K8sLogViewer({ podId, podName }: { podId: string; podName: strin
       ws.close();
       wsRef.current = null;
     };
-  }, [podId, reconnectNonce]);
+  }, [podId, reconnectNonce, resetLines, pushLine]);
 
   useEffect(() => {
     if (autoScrollRef.current) {
@@ -93,17 +108,13 @@ export function K8sLogViewer({ podId, podName }: { podId: string; podName: strin
     }
   }, [lines]);
 
-  function handleDisconnect() {
-    wsRef.current?.close();
-  }
-
   function handleReconnect() {
     setReconnectNonce((n) => n + 1);
   }
 
   return (
     <div className={`flex flex-col gap-2 ${panelClassName}`}>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm">
           <span
             className={`h-2 w-2 rounded-full ${
@@ -117,19 +128,17 @@ export function K8sLogViewer({ podId, podName }: { podId: string; podName: strin
             {state === "error" && (message ?? "Connection error")}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <LogRefreshControls buffer={buffer} refresh={settings.refresh} onRefreshChange={(refresh) => updateSettings({ refresh })} />
           <Button variant="outline" size="sm" onClick={handleReconnect} disabled={state === "connecting"}>
             Reconnect
           </Button>
-          <Button variant="outline" size="sm" onClick={handleDisconnect} disabled={state !== "connected"}>
-            Disconnect
-          </Button>
-          <LogThemeToggle theme={theme} onToggle={toggleTheme} />
+          <LogDisplayControls settings={settings} onChange={updateSettings} />
           <ExpandToggleButton fullscreen={fullscreen} onToggle={toggleFullscreen} />
         </div>
       </div>
       <div
-        style={contentStyle}
+        style={{ ...contentStyle, ...logBoxStyle(settings) }}
         className={`w-full overflow-y-auto py-1 ${logBoxClass(theme)} ${contentClassName}`}
         onScroll={(e) => {
           const el = e.currentTarget;
@@ -140,7 +149,7 @@ export function K8sLogViewer({ podId, podName }: { podId: string; podName: strin
           <p className={`px-3 py-2 text-xs ${logMutedClass(theme)}`}>{state === "connected" ? "Waiting for log output…" : ""}</p>
         ) : (
           lines.map((line, i) => (
-            <LogLineRow key={i} text={line.text} severity={line.severity} suggestion={line.suggestion} theme={theme} />
+            <LogLineRow key={i} text={line.text} severity={line.severity} suggestion={line.suggestion} receivedAt={line.receivedAt} theme={theme} />
           ))
         )}
         <div ref={bottomRef} />
