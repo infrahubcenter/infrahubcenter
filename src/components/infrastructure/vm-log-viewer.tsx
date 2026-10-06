@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
-import { LogSeverityBadge } from "@/components/infrastructure/log-severity-badge";
 import { ExpandToggleButton, ResizeHandle, useExpandablePanel } from "@/components/infrastructure/expandable-panel";
 import { Button } from "@/components/ui/button";
 import { type VMAgentLogsInboundFrame, type LogSeverity } from "@/lib/api";
+import { LogLineRow, LogThemeToggle, logBoxClass, logMutedClass, useLogTheme } from "@/components/infrastructure/log-lines";
 
 type ViewerState = "connecting" | "connected" | "error" | "closed";
 
@@ -23,6 +23,7 @@ export function VMLogViewer({ streamUrl, vmName }: { streamUrl: string; vmName: 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const autoScrollRef = useRef(true);
   const { fullscreen, toggleFullscreen, contentStyle, contentClassName, panelClassName, resizeHandleProps } = useExpandablePanel(550);
+  const [theme, toggleTheme] = useLogTheme();
   // Bumping this forces the connect effect below to tear down whatever
   // WebSocket it has (open, closed, or stuck) and open a fresh one --
   // the manual "Reconnect" escape hatch for "I'm connected but not
@@ -124,30 +125,23 @@ export function VMLogViewer({ streamUrl, vmName }: { streamUrl: string; vmName: 
           <Button variant="outline" size="sm" onClick={handleDisconnect} disabled={state !== "connected"}>
             Disconnect
           </Button>
+          <LogThemeToggle theme={theme} onToggle={toggleTheme} />
           <ExpandToggleButton fullscreen={fullscreen} onToggle={toggleFullscreen} />
         </div>
       </div>
       <div
         style={contentStyle}
-        className={`w-full overflow-y-auto rounded-lg border border-slate-200 bg-slate-950 p-3 font-mono text-xs text-slate-200 ${contentClassName}`}
+        className={`w-full overflow-y-auto py-1 ${logBoxClass(theme)} ${contentClassName}`}
         onScroll={(e) => {
           const el = e.currentTarget;
           autoScrollRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
       >
         {lines.length === 0 ? (
-          <p className="text-slate-500">{state === "connected" ? "Waiting for log output…" : ""}</p>
+          <p className={`px-3 py-2 text-xs ${logMutedClass(theme)}`}>{state === "connected" ? "Waiting for log output…" : ""}</p>
         ) : (
           lines.map((line, i) => (
-            <div key={i} className="border-b border-slate-800/60 py-1 last:border-0">
-              <div className="flex flex-wrap items-start gap-2 whitespace-pre-wrap break-all">
-                <LogSeverityBadge severity={line.severity} />
-                <span>{line.text}</span>
-              </div>
-              {line.suggestion && (
-                <p className="ml-1 mt-1 text-[11px] font-sans text-amber-300/90">Suggested next step: {line.suggestion}</p>
-              )}
-            </div>
+            <LogLineRow key={i} text={line.text} severity={line.severity} suggestion={line.suggestion} theme={theme} />
           ))
         )}
         <div ref={bottomRef} />

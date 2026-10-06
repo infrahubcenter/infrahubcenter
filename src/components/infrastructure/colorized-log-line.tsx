@@ -8,24 +8,32 @@ import { Fragment } from "react";
 // within the line itself, e.g. a HEALTHY line that still mentions a 500
 // somewhere in a stack trace).
 const TOKEN_SOURCE =
-  "\\b(1\\d\\d|2\\d\\d|3\\d\\d|4\\d\\d|5\\d\\d)\\b|\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|\\b(WARN|WARNING)\\b|\\b(SUCCESS|SUCCEEDED|OK|HEALTHY)\\b|\\b(INFO|DEBUG)\\b";
+  "(?<![\\d.:])(1\\d\\d|2\\d\\d|3\\d\\d|4\\d\\d|5\\d\\d)(?![\\d.:])|\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|\\b(WARN|WARNING)\\b|\\b(SUCCESS|SUCCEEDED|OK|HEALTHY)\\b|\\b(INFO|DEBUG)\\b";
 
-function classFor(match: string): string {
+// Token colors per log background: brighter shades on black, deeper ones
+// on white, so both stay readable.
+const TOKEN_COLORS = {
+  dark: { ok: "text-emerald-400", redirect: "text-sky-400", warn: "text-amber-400", bad: "text-red-400", info: "text-slate-400" },
+  light: { ok: "text-emerald-700", redirect: "text-sky-700", warn: "text-amber-700", bad: "text-red-700", info: "text-slate-500" },
+};
+
+function classFor(match: string, theme: "dark" | "light"): string {
+  const c = TOKEN_COLORS[theme];
   const upper = match.toUpperCase();
   if (/^[1-5]\d\d$/.test(match)) {
     const first = match[0];
-    if (first === "2") return "text-emerald-400 font-semibold";
-    if (first === "3") return "text-sky-400 font-semibold";
-    if (first === "4") return "text-amber-400 font-semibold";
-    return "text-red-400 font-semibold"; // 1xx/5xx
+    if (first === "2") return `${c.ok} font-semibold`;
+    if (first === "3") return `${c.redirect} font-semibold`;
+    if (first === "4") return `${c.warn} font-semibold`;
+    return `${c.bad} font-semibold`; // 1xx/5xx
   }
-  if (["ERROR", "FATAL", "PANIC", "CRITICAL"].includes(upper)) return "text-red-400 font-semibold";
-  if (["WARN", "WARNING"].includes(upper)) return "text-amber-400 font-semibold";
-  if (["SUCCESS", "SUCCEEDED", "OK", "HEALTHY"].includes(upper)) return "text-emerald-400 font-semibold";
-  return "text-slate-400";
+  if (["ERROR", "FATAL", "PANIC", "CRITICAL"].includes(upper)) return `${c.bad} font-semibold`;
+  if (["WARN", "WARNING"].includes(upper)) return `${c.warn} font-semibold`;
+  if (["SUCCESS", "SUCCEEDED", "OK", "HEALTHY"].includes(upper)) return `${c.ok} font-semibold`;
+  return c.info;
 }
 
-export function ColorizedLogLine({ text }: { text: string }) {
+export function ColorizedLogLine({ text, theme = "dark" }: { text: string; theme?: "dark" | "light" }) {
   const nodes: React.ReactNode[] = [];
   let lastIndex = 0;
   let i = 0;
@@ -39,7 +47,7 @@ export function ColorizedLogLine({ text }: { text: string }) {
       nodes.push(<Fragment key={i++}>{text.slice(lastIndex, match.index)}</Fragment>);
     }
     nodes.push(
-      <span key={i++} className={classFor(match[0])}>
+      <span key={i++} className={classFor(match[0], theme)}>
         {match[0]}
       </span>
     );

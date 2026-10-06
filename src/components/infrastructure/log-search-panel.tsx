@@ -2,25 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Search, SlidersHorizontal } from "lucide-react";
-import { LogSeverityBadge } from "@/components/infrastructure/log-severity-badge";
-import { ColorizedLogLine } from "@/components/infrastructure/colorized-log-line";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, type LogSearchResult, type LogSeverity } from "@/lib/api";
+import { LogLineRow, LogThemeToggle, logBoxClass, logMutedClass, useLogTheme } from "@/components/infrastructure/log-lines";
 
 const PAGE_SIZE = 100;
 
 // Same left-border accent per severity as the live viewers (Docker/K8s)
 // -- a Past/Error/Success search result should look and read identically
 // to a line that arrived live.
-const SEVERITY_BORDER: Record<LogSeverity, string> = {
-  HEALTHY: "border-l-emerald-500/50",
-  WARNING: "border-l-amber-500/60",
-  ERROR: "border-l-red-500/60",
-  CRITICAL: "border-l-red-500/90",
-};
-
 // Off/5s/15s auto re-run of the current search -- shared by every Logs
 // page this panel is embedded in (Docker/K8s/Database/VM), so it only
 // needs to be built once here rather than per-resource-type.
@@ -93,6 +85,7 @@ export function LogSearchPanel({
   const [severity, setSeverity] = useState<LogSeverity | "ALL">(initialSeverity ?? "ALL");
   const [showAdvanced, setShowAdvanced] = useState(Boolean(advancedDefault || initialFilters?.from || initialFilters?.to));
   const [result, setResult] = useState<LogSearchResult | null>(null);
+  const [theme, toggleTheme] = useLogTheme();
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -252,27 +245,19 @@ export function LogSearchPanel({
 
       {result && (
         <>
-          <p className="text-xs text-slate-500">
-            {result.total} matching line{result.total === 1 ? "" : "s"} since{" "}
-            {new Date(result.retention_cutoff).toLocaleString()} (retention limit)
-          </p>
-          <div className="h-[55vh] w-full overflow-y-auto rounded-lg border border-slate-200 bg-slate-950 p-3 font-mono text-xs text-slate-200">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-slate-500">
+              {result.total} matching line{result.total === 1 ? "" : "s"} since{" "}
+              {new Date(result.retention_cutoff).toLocaleString()} (retention limit)
+            </p>
+            <LogThemeToggle theme={theme} onToggle={toggleTheme} />
+          </div>
+          <div className={`h-[55vh] w-full overflow-y-auto py-1 ${logBoxClass(theme)}`}>
             {result.lines.length === 0 ? (
-              <p className="text-slate-500">No matching log lines in the retained history.</p>
+              <p className={`px-3 py-2 text-xs ${logMutedClass(theme)}`}>No matching log lines in the retained history.</p>
             ) : (
               [...result.lines].reverse().map((line) => (
-                <div key={line.id} className={`border-b border-l-2 border-slate-800/60 py-1 pl-2 last:border-b-0 ${SEVERITY_BORDER[line.severity]}`}>
-                  <div className="flex flex-wrap items-start gap-2 whitespace-pre-wrap break-all">
-                    <span className="shrink-0 text-slate-500">{new Date(line.logged_at).toLocaleString()}</span>
-                    <LogSeverityBadge severity={line.severity} />
-                    <span>
-                      <ColorizedLogLine text={line.line} />
-                    </span>
-                  </div>
-                  {line.suggestion && (
-                    <p className="ml-1 mt-1 text-[11px] font-sans text-amber-300/90">Suggested next step: {line.suggestion}</p>
-                  )}
-                </div>
+                <LogLineRow key={line.id} text={line.line} severity={line.severity} suggestion={line.suggestion} loggedAt={line.logged_at} theme={theme} />
               ))
             )}
           </div>

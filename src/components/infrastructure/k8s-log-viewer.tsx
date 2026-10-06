@@ -1,22 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { LogSeverityBadge } from "@/components/infrastructure/log-severity-badge";
-import { ColorizedLogLine } from "@/components/infrastructure/colorized-log-line";
 import { ExpandToggleButton, ResizeHandle, useExpandablePanel } from "@/components/infrastructure/expandable-panel";
 import { Button } from "@/components/ui/button";
 import { k8sLogsStreamUrl, type K8sLogsInboundFrame, type LogSeverity } from "@/lib/api";
+import { LogLineRow, LogThemeToggle, logBoxClass, logMutedClass, useLogTheme } from "@/components/infrastructure/log-lines";
 
 // Left-border accent per severity -- lets a WARNING/ERROR/CRITICAL line
 // stand out at a glance while scanning fast, on top of the badge and any
-// in-line status-code/keyword highlighting (see ColorizedLogLine).
-const SEVERITY_BORDER: Record<LogSeverity, string> = {
-  HEALTHY: "border-l-emerald-500/50",
-  WARNING: "border-l-amber-500/60",
-  ERROR: "border-l-red-500/60",
-  CRITICAL: "border-l-red-500/90",
-};
-
+// in-line status-code/keyword highlighting (see LogLineRow in log-lines.tsx).
 type ViewerState = "connecting" | "connected" | "error" | "closed";
 
 type ViewerLine = { text: string; severity: LogSeverity; category?: string; suggestion?: string };
@@ -37,6 +29,7 @@ export function K8sLogViewer({ podId, podName }: { podId: string; podName: strin
   // where the stream status already lives.
   const [reconnectNonce, setReconnectNonce] = useState(0);
   const { fullscreen, toggleFullscreen, contentStyle, contentClassName, panelClassName, resizeHandleProps } = useExpandablePanel(550);
+  const [theme, toggleTheme] = useLogTheme();
 
   useEffect(() => {
     // Resets stale state from the previously selected pod (or a manual
@@ -131,32 +124,23 @@ export function K8sLogViewer({ podId, podName }: { podId: string; podName: strin
           <Button variant="outline" size="sm" onClick={handleDisconnect} disabled={state !== "connected"}>
             Disconnect
           </Button>
+          <LogThemeToggle theme={theme} onToggle={toggleTheme} />
           <ExpandToggleButton fullscreen={fullscreen} onToggle={toggleFullscreen} />
         </div>
       </div>
       <div
         style={contentStyle}
-        className={`w-full overflow-y-auto rounded-lg border border-slate-200 bg-slate-950 p-3 font-mono text-xs text-slate-200 ${contentClassName}`}
+        className={`w-full overflow-y-auto py-1 ${logBoxClass(theme)} ${contentClassName}`}
         onScroll={(e) => {
           const el = e.currentTarget;
           autoScrollRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
       >
         {lines.length === 0 ? (
-          <p className="text-slate-500">{state === "connected" ? "Waiting for log output…" : ""}</p>
+          <p className={`px-3 py-2 text-xs ${logMutedClass(theme)}`}>{state === "connected" ? "Waiting for log output…" : ""}</p>
         ) : (
           lines.map((line, i) => (
-            <div key={i} className={`border-b border-l-2 border-slate-800/60 py-1 pl-2 last:border-b-0 ${SEVERITY_BORDER[line.severity]}`}>
-              <div className="flex flex-wrap items-start gap-2 whitespace-pre-wrap break-all">
-                <LogSeverityBadge severity={line.severity} />
-                <span>
-                  <ColorizedLogLine text={line.text} />
-                </span>
-              </div>
-              {line.suggestion && (
-                <p className="ml-1 mt-1 text-[11px] font-sans text-amber-300/90">Suggested next step: {line.suggestion}</p>
-              )}
-            </div>
+            <LogLineRow key={i} text={line.text} severity={line.severity} suggestion={line.suggestion} theme={theme} />
           ))
         )}
         <div ref={bottomRef} />
