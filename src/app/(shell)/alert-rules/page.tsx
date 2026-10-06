@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Bell, Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import { RouteGuard } from "@/components/auth/route-guard";
 import { ConfirmDialog } from "@/components/infrastructure/confirm-dialog";
+import { LogDashboardAlertRuleForm } from "@/components/infrastructure/log-dashboard-alert-rule-form";
 import { SeverityBadge } from "@/components/infrastructure/severity-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -79,6 +80,14 @@ const RESOURCE_CHOICE_ORDER: ResourceTypeChoice[] = [
 ];
 
 const CONDITIONS: AlertCondition[] = [">", "<", ">=", "<=", "=="];
+
+// Friendly names for the log-dashboard rule types.
+const LOG_RULE_LABELS: Record<string, string> = {
+  K8S_LOGS_POD_PROBLEM: "Pod problems (ImagePullBackOff, crash loop, OOM, access denied…)",
+  K8S_LOGS_ERROR_LINES: "Errors / suspicious activity in pod logs",
+  DOCKER_LOGS_CONTAINER_EXITED: "Container stopped",
+  DOCKER_LOGS_ERROR_LINES: "Errors / suspicious activity in container logs",
+};
 const SEVERITIES: AlertSeverity[] = ["INFO", "WARNING", "CRITICAL"];
 
 // Every resource kind Alert Rules can target -- the order here is also
@@ -116,6 +125,9 @@ export function AlertRulesContent() {
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<AlertRuleListItem | null>(null);
+  // Log-dashboard rules (Docker/Kubernetes Log Explorer) have their own form.
+  const [showLogForm, setShowLogForm] = useState(false);
+  const [editingLog, setEditingLog] = useState<AlertRuleListItem | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -170,16 +182,20 @@ export function AlertRulesContent() {
   const sections = useMemo(() => {
     const groups = new Map<string, AlertRuleListItem[]>();
     for (const item of rules ?? []) {
-      const list = groups.get(item.resource_type) ?? [];
+      const key = item.rule.monitoring_dashboard_id ? "LOG_DASHBOARD" : item.resource_type;
+      const list = groups.get(key) ?? [];
       list.push(item);
-      groups.set(item.resource_type, list);
+      groups.set(key, list);
     }
-    return RESOURCE_KIND_ORDER.map((kind) => ({ kind, label: RESOURCE_KIND_LABELS[kind], items: groups.get(kind) ?? [] })).filter(
-      (s) => s.items.length > 0
-    );
+    return [
+      ...RESOURCE_KIND_ORDER.map((kind) => ({ kind: kind as string, label: RESOURCE_KIND_LABELS[kind], items: groups.get(kind) ?? [] })),
+      { kind: "LOG_DASHBOARD", label: "Log Explorer (Docker & Kubernetes)", items: groups.get("LOG_DASHBOARD") ?? [] },
+    ].filter((s) => s.items.length > 0);
   }, [rules]);
 
   function targetDetail(item: AlertRuleListItem): string {
+    if (item.monitoring_dashboard_name)
+      return `${item.monitoring_dashboard_feature === "DOCKER_LOGS" ? "Docker" : "Kubernetes"} log dashboard "${item.monitoring_dashboard_name}"`;
     if (item.rule.container_id) return `container ${item.rule.container_id.slice(0, 8)}`;
     if (item.k8s_pod_name) return `pod ${item.k8s_pod_namespace ? `${item.k8s_pod_namespace}/` : ""}${item.k8s_pod_name}`;
     if (item.docker_host_container_docker_id) return `container ${item.docker_host_container_docker_id.slice(0, 8)}`;
@@ -196,8 +212,8 @@ export function AlertRulesContent() {
         </TableCell>
         <TableCell className="text-slate-600">
           <div className="flex items-center gap-1.5">
-            {item.rule.alert_type.replace(/_/g, " ")}
-            {item.rule.alert_type.endsWith("_HIGH_ERROR_LOGS") && (
+            {LOG_RULE_LABELS[item.rule.alert_type] ?? item.rule.alert_type.replace(/_/g, " ")}
+            {(item.rule.alert_type.endsWith("_HIGH_ERROR_LOGS") || item.rule.monitoring_dashboard_id) && (
               <Badge variant="outline" className="text-[10px]">
                 Logs
               </Badge>
@@ -207,7 +223,13 @@ export function AlertRulesContent() {
         <TableCell className="font-mono text-xs text-slate-600">
           {item.rule.condition} {item.rule.threshold}
         </TableCell>
-        <TableCell className="text-slate-600">{item.rule.duration_seconds}s</TableCell>
+        <TableCell className="text-slate-600">
+          {item.rule.monitoring_dashboard_id
+            ? item.rule.duration_seconds > 0
+              ? `last ${Math.round(item.rule.duration_seconds / 60)}m`
+              : "—"
+            : `${item.rule.duration_seconds}s`}
+        </TableCell>
         <TableCell>
           <SeverityBadge severity={item.rule.severity} />
         </TableCell>
@@ -248,7 +270,14 @@ export function AlertRulesContent() {
             disabled={busyId === item.rule.id}
             onClick={() => {
               setShowForm(false);
-              setEditing(item);
+              setShowLogForm(false);
+              if (item.rule.monitoring_dashboard_id) {
+                setEditing(null);
+                setEditingLog(item);
+              } else {
+                setEditingLog(null);
+                setEditing(item);
+              }
             }}
           >
             <Pencil className="h-4 w-4" />
@@ -281,18 +310,36 @@ export function AlertRulesContent() {
             Configure when a metric breach on a Compute Inventory or Host Metrics &amp; Logs VM, a Database
             Observability database, an Object Storage (S3) bucket, a Docker Monitoring host/container or a
             Kubernetes Monitoring cluster/pod -- or a burst of error-level logs from Log Management -- should raise
-            an alert. Rules never execute anything -- they only observe and notify.
+            an alert. New Log Alert watches a whole Docker or Kubernetes Log Explorer dashboard: pod problems
+            (ImagePullBackOff, crash loops, OOM kills, access denied), errors or suspicious activity in logs, and
+            containers that stop. Rules never execute anything -- they only observe and notify.
           </p>
         </div>
-        <Button
-          size="sm"
-          onClick={() => {
-            setEditing(null);
-            setShowForm((v) => !v);
-          }}
-        >
-          <Plus className="h-4 w-4" /> New Rule
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setEditing(null);
+              setEditingLog(null);
+              setShowForm(false);
+              setShowLogForm((v) => !v);
+            }}
+          >
+            <Bell className="h-4 w-4" /> New Log Alert
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditing(null);
+              setEditingLog(null);
+              setShowLogForm(false);
+              setShowForm((v) => !v);
+            }}
+          >
+            <Plus className="h-4 w-4" /> New Rule
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -310,6 +357,28 @@ export function AlertRulesContent() {
             load();
           }}
           onCancel={() => setEditing(null)}
+        />
+      )}
+
+      {editingLog && (
+        <LogDashboardAlertRuleForm
+          key={editingLog.rule.id}
+          existing={editingLog}
+          onSaved={() => {
+            setEditingLog(null);
+            load();
+          }}
+          onCancel={() => setEditingLog(null)}
+        />
+      )}
+
+      {showLogForm && (
+        <LogDashboardAlertRuleForm
+          onSaved={() => {
+            setShowLogForm(false);
+            load();
+          }}
+          onCancel={() => setShowLogForm(false)}
         />
       )}
 

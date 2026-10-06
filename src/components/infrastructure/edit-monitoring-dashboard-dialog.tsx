@@ -57,6 +57,9 @@ export function EditMonitoringDashboardDialog({
   const [selectedContainerIds, setSelectedContainerIds] = useState<string[]>(containerFilters);
   const [selectAllContainers, setSelectAllContainers] = useState(dashboard.resource_selection.length === 0);
   const [selectedNamespaces, setSelectedNamespaces] = useState<string[]>(namespaceFilters);
+  const [selectedApps, setSelectedApps] = useState<string[]>(
+    dashboard.resource_selection.filter((f) => f.type === "APP").map((f) => f.value)
+  );
   const [selectAllNamespaces, setSelectAllNamespaces] = useState(dashboard.resource_selection.length === 0);
 
   const [hostContainers, setHostContainers] = useState<DockerHostContainer[]>([]);
@@ -79,6 +82,7 @@ export function EditMonitoringDashboardDialog({
     setSelectedContainerIds(dashboard.resource_selection.filter((f) => f.type === "CONTAINER").map((f) => f.value));
     setSelectAllContainers(dashboard.resource_selection.length === 0);
     setSelectedNamespaces(dashboard.resource_selection.filter((f) => f.type === "NAMESPACE").map((f) => f.value));
+    setSelectedApps(dashboard.resource_selection.filter((f) => f.type === "APP").map((f) => f.value));
     setSelectAllNamespaces(dashboard.resource_selection.length === 0);
     setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -112,7 +116,7 @@ export function EditMonitoringDashboardDialog({
     };
   }, [open, logs, docker, resourceId, resourcesRefreshKey]);
 
-  const canSave = name.trim() !== "" && (!logs || (docker ? selectAllContainers || selectedContainerIds.length > 0 : selectAllNamespaces || selectedNamespaces.length > 0));
+  const canSave = name.trim() !== "" && (!logs || (docker ? selectAllContainers || selectedContainerIds.length > 0 : selectAllNamespaces || selectedNamespaces.length > 0 || selectedApps.length > 0));
 
   async function handleSave() {
     if (!canSave || submitting) return;
@@ -135,7 +139,10 @@ export function EditMonitoringDashboardDialog({
             : selectedContainerIds.map((id) => ({ type: "CONTAINER" as const, value: id }))
           : selectAllNamespaces
             ? []
-            : selectedNamespaces.map((n) => ({ type: "NAMESPACE" as const, value: n }));
+            : [
+                ...selectedNamespaces.map((n) => ({ type: "NAMESPACE" as const, value: n })),
+                ...selectedApps.map((a) => ({ type: "APP" as const, value: a })),
+              ];
         const withSelection = await setMonitoringDashboardResourceSelection(dashboard.id, filters);
         onUpdated(withSelection);
       } else {
@@ -196,6 +203,8 @@ export function EditMonitoringDashboardDialog({
               loading={resourcesLoading}
               selectedNamespaces={selectedNamespaces}
               onSelectedNamespacesChange={setSelectedNamespaces}
+              selectedApps={selectedApps}
+              onSelectedAppsChange={setSelectedApps}
               selectAll={selectAllNamespaces}
               onSelectAllChange={setSelectAllNamespaces}
               onRefresh={() => setResourcesRefreshKey((k) => k + 1)}

@@ -109,6 +109,8 @@ export function ConfigureMonitoringDashboardWizard({
   const [selectAllContainers, setSelectAllContainers] = useState(false);
   const [pods, setPods] = useState<K8sOverviewPod[]>([]);
   const [selectedNamespaces, setSelectedNamespaces] = useState<string[]>([]);
+  // Single apps ("<namespace>/<app>") inside namespaces not ticked whole.
+  const [selectedApps, setSelectedApps] = useState<string[]>([]);
   const [selectAllNamespaces, setSelectAllNamespaces] = useState(false);
   const [resourcesLoading, setResourcesLoading] = useState(false);
 
@@ -186,6 +188,7 @@ export function ConfigureMonitoringDashboardWizard({
     setSelectedContainerIds([]);
     setSelectAllContainers(false);
     setSelectedNamespaces([]);
+    setSelectedApps([]);
     setSelectAllNamespaces(false);
     setError(null);
   }
@@ -198,7 +201,7 @@ export function ConfigureMonitoringDashboardWizard({
   const canProceedFromBasic = name.trim() !== "" && resourceId !== "";
   const canProceedFromResources = docker
     ? selectAllContainers || selectedContainerIds.length > 0
-    : selectAllNamespaces || selectedNamespaces.length > 0;
+    : selectAllNamespaces || selectedNamespaces.length > 0 || selectedApps.length > 0;
 
   async function handleSubmit() {
     setSubmitting(true);
@@ -220,7 +223,10 @@ export function ConfigureMonitoringDashboardWizard({
             : selectedContainerIds.map((id) => ({ type: "CONTAINER", value: id }))
           : selectAllNamespaces
             ? []
-            : selectedNamespaces.map((n) => ({ type: "NAMESPACE" as const, value: n }));
+            : [
+                ...selectedNamespaces.map((n) => ({ type: "NAMESPACE" as const, value: n })),
+                ...selectedApps.map((a) => ({ type: "APP" as const, value: a })),
+              ];
         await setMonitoringDashboardResourceSelection(dashboard.id, filters);
       } else {
         // Monitoring dashboards always track everything on their target
@@ -332,6 +338,8 @@ export function ConfigureMonitoringDashboardWizard({
               loading={resourcesLoading}
               selectedNamespaces={selectedNamespaces}
               onSelectedNamespacesChange={setSelectedNamespaces}
+              selectedApps={selectedApps}
+              onSelectedAppsChange={setSelectedApps}
               selectAll={selectAllNamespaces}
               onSelectAllChange={setSelectAllNamespaces}
               onRefresh={() => setResourcesRefreshKey((k) => k + 1)}
@@ -348,7 +356,7 @@ export function ConfigureMonitoringDashboardWizard({
               </dd>
               {logs && (
                 <>
-                  <dt className="text-slate-500">{docker ? "Containers" : "Namespaces"}</dt>
+                  <dt className="text-slate-500">{docker ? "Containers" : "Namespaces / apps"}</dt>
                   <dd className="col-span-2 text-slate-900">
                     {docker
                       ? selectAllContainers
@@ -356,7 +364,13 @@ export function ConfigureMonitoringDashboardWizard({
                         : `${selectedContainerIds.length} selected`
                       : selectAllNamespaces
                         ? "All namespaces (including future ones)"
-                        : `${selectedNamespaces.length} selected`}
+                        : [
+                            selectedNamespaces.length > 0 &&
+                              `${selectedNamespaces.length} namespace${selectedNamespaces.length === 1 ? "" : "s"}`,
+                            selectedApps.length > 0 && `${selectedApps.length} app${selectedApps.length === 1 ? "" : "s"}`,
+                          ]
+                            .filter(Boolean)
+                            .join(" + ")}
                   </dd>
                 </>
               )}

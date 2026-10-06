@@ -55,6 +55,9 @@ export default function AlertsPage() {
 function AlertsPageContent() {
   const { user } = useAuth();
   const isAdmin = isAdminRole(user?.role);
+  // ?tab=rules|notifications|active opens a tab directly (e.g. from a log
+  // dashboard's "Create alert").
+  const tab = useSearchParams().get("tab");
 
   return (
     <div className="flex flex-col gap-4">
@@ -64,7 +67,7 @@ function AlertsPageContent() {
         </h2>
       </div>
 
-      <Tabs defaultValue={isAdmin ? "notifications" : "active"}>
+      <Tabs defaultValue={tab === "active" || (isAdmin && (tab === "rules" || tab === "notifications")) ? tab : isAdmin ? "notifications" : "active"}>
         <TabsList>
           {isAdmin && <TabsTrigger value="notifications">Notifications</TabsTrigger>}
           {isAdmin && <TabsTrigger value="rules">Alert Rules</TabsTrigger>}

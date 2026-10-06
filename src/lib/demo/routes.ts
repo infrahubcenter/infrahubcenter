@@ -389,7 +389,12 @@ const ALERT_TEMPLATES: AlertTemplate[] = [
   default_duration_seconds: 300,
   default_severity: severity as AlertTemplate["default_severity"],
   applies_to_resource: applies as string,
-}));
+})).concat([
+  { type: "K8S_LOGS_POD_PROBLEM", metric: "K8S_POD_PROBLEM_COUNT", label: "Kubernetes pod problem", default_condition: ">=", default_threshold: 1, default_duration_seconds: 600, default_severity: "CRITICAL", applies_to_resource: "K8S_LOG_DASHBOARD" },
+  { type: "K8S_LOGS_ERROR_LINES", metric: "LOG_MATCH_COUNT", label: "Errors or suspicious activity in pod logs", default_condition: ">=", default_threshold: 1, default_duration_seconds: 300, default_severity: "WARNING", applies_to_resource: "K8S_LOG_DASHBOARD" },
+  { type: "DOCKER_LOGS_CONTAINER_EXITED", metric: "CONTAINER_EXITED", label: "Container stopped", default_condition: "==", default_threshold: 1, default_duration_seconds: 0, default_severity: "CRITICAL", applies_to_resource: "DOCKER_LOG_DASHBOARD" },
+  { type: "DOCKER_LOGS_ERROR_LINES", metric: "LOG_MATCH_COUNT", label: "Errors or suspicious activity in container logs", default_condition: ">=", default_threshold: 1, default_duration_seconds: 300, default_severity: "WARNING", applies_to_resource: "DOCKER_LOG_DASHBOARD" },
+]);
 
 function monitoringResources(): MonitoringResource[] {
   const active = alerts().filter((a) => a.status === "ACTIVE");

@@ -2254,7 +2254,8 @@ export type MonitoringFolder = {
   created_at: string;
 };
 
-export type MonitoringDashboardFilterType = "CONTAINER" | "NAMESPACE" | "RESOURCE_TYPE";
+// APP = one app inside a namespace, "<namespace>/<app>" (see podAppKey).
+export type MonitoringDashboardFilterType = "CONTAINER" | "NAMESPACE" | "APP" | "RESOURCE_TYPE";
 export type MonitoringDashboardFilter = { type: MonitoringDashboardFilterType; value: string };
 
 export type MonitoringWidgetType =
@@ -4057,6 +4058,10 @@ export type Alert = {
   suppressed_reason?: string;
   created_at: string;
   duration_seconds: number;
+  // Log-dashboard alerts: the app/container it's about, and the log lines
+  // that explain it (e.g. the last lines before a container stopped).
+  subject_label?: string;
+  log_excerpt?: string;
 };
 
 export function listAlerts(params?: {
@@ -4163,8 +4168,23 @@ export type AlertTemplate = {
   default_duration_seconds: number;
   default_severity: AlertSeverity;
   // "VM" | "DATABASE" | "OBJECT_STORAGE" | "DOCKER_CONTAINER" | "K8S_CLUSTER" |
-  // "K8S_POD" | "DOCKER_HOST" | "DOCKER_HOST_CONTAINER"
+  // "K8S_POD" | "DOCKER_HOST" | "DOCKER_HOST_CONTAINER" |
+  // "K8S_LOG_DASHBOARD" | "DOCKER_LOG_DASHBOARD"
   applies_to_resource: string;
+};
+
+// Templates set on a whole Docker/Kubernetes log dashboard, one alert per
+// app/container -- see LogDashboardAlertRuleForm.
+export function isLogDashboardAlertTemplate(t: AlertTemplate): boolean {
+  return t.applies_to_resource === "K8S_LOG_DASHBOARD" || t.applies_to_resource === "DOCKER_LOG_DASHBOARD";
+}
+
+// alert_rules.match_options for log-dashboard rules.
+export type LogDashboardMatchOptions = {
+  k8s_problems?: string[]; // empty = every kind
+  log_categories?: string[]; // empty = any ERROR/CRITICAL line
+  only_unexpected_exits?: boolean;
+  log_lines?: number; // lines attached to the alert; unset = 20
 };
 
 // Every metric-threshold template's "current value" comes from an
@@ -4201,6 +4221,8 @@ export type AlertRule = {
   suppressed_until?: string;
   suppressed_reason?: string;
   created_at: string;
+  monitoring_dashboard_id?: string;
+  match_options?: LogDashboardMatchOptions;
 };
 
 export type AlertRuleListItem = {
@@ -4213,6 +4235,9 @@ export type AlertRuleListItem = {
   k8s_pod_name?: string;
   k8s_pod_namespace?: string;
   docker_host_container_docker_id?: string;
+  // Log-dashboard rules.
+  monitoring_dashboard_name?: string;
+  monitoring_dashboard_feature?: MonitoringFeature;
 };
 
 export function listAlertRules() {
@@ -4223,7 +4248,8 @@ export function listAlertRules() {
 // DATABASE_* type against a VM resource) -- surface the message directly,
 // it's already descriptive.
 export function createAlertRule(payload: {
-  resource_id: string;
+  // Optional for log-dashboard rules -- taken from the dashboard.
+  resource_id?: string;
   container_id?: string;
   k8s_pod_id?: string;
   // Raw Docker container id (from listDockerHostContainers) -- resolved
@@ -4239,6 +4265,8 @@ export function createAlertRule(payload: {
   severity: AlertSeverity;
   notification_policy_id?: string;
   enabled: boolean;
+  monitoring_dashboard_id?: string;
+  match_options?: LogDashboardMatchOptions;
 }) {
   return apiFetch<AlertRule>("/api/alert-rules", { method: "POST", body: JSON.stringify(payload) });
 }
@@ -4260,6 +4288,8 @@ export function updateAlertRule(
     severity: AlertSeverity;
     notification_policy_id?: string;
     enabled: boolean;
+    // Log-dashboard rules only; omitted = keep the current options.
+    match_options?: LogDashboardMatchOptions;
   }
 ) {
   return apiFetch<AlertRule>(`/api/alert-rules/${id}`, { method: "PUT", body: JSON.stringify(payload) });

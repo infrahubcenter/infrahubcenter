@@ -148,6 +148,15 @@ export default function AlertDetailPage() {
         </AlertBox>
       )}
 
+      {alert.log_excerpt && (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-sm font-semibold text-slate-900">Log lines</h3>
+          <pre className="max-h-[50vh] overflow-auto rounded-lg border border-neutral-800 bg-black p-3 font-mono text-xs leading-5 whitespace-pre-wrap text-slate-100 [overflow-wrap:anywhere]">
+            {alert.log_excerpt}
+          </pre>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <h3 className="mb-2 text-sm font-semibold text-slate-900">Resource</h3>
@@ -168,6 +177,12 @@ export default function AlertDetailPage() {
               <div className="flex justify-between gap-4">
                 <dt className="text-slate-500">Container</dt>
                 <dd className="text-slate-900">{alert.container_name}</dd>
+              </div>
+            )}
+            {alert.subject_label && (
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">App / container</dt>
+                <dd className="break-all text-right text-slate-900">{alert.subject_label}</dd>
               </div>
             )}
             <div className="flex justify-between gap-4">

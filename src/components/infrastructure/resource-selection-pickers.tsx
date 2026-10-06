@@ -93,11 +93,16 @@ export function DockerContainerPicker({
   );
 }
 
+// Whole namespaces (including pods created later) or, inside a namespace
+// that isn't ticked as a whole, single apps -- stored as "<namespace>/<app>"
+// so a selection survives restarts and redeploys (see podAppKey).
 export function K8sNamespacePicker({
   pods,
   loading,
   selectedNamespaces,
   onSelectedNamespacesChange,
+  selectedApps,
+  onSelectedAppsChange,
   selectAll,
   onSelectAllChange,
   onRefresh,
@@ -106,6 +111,8 @@ export function K8sNamespacePicker({
   loading: boolean;
   selectedNamespaces: string[];
   onSelectedNamespacesChange: (namespaces: string[]) => void;
+  selectedApps: string[];
+  onSelectedAppsChange: (apps: string[]) => void;
   selectAll: boolean;
   onSelectAllChange: (v: boolean) => void;
   onRefresh: () => void;
@@ -119,11 +126,25 @@ export function K8sNamespacePicker({
     podsByNamespace.set(p.namespace, list);
   }
 
+  function toggleNamespace(ns: string, on: boolean) {
+    if (on) {
+      onSelectedNamespacesChange([...selectedNamespaces, ns]);
+      // The whole namespace now covers its apps.
+      onSelectedAppsChange(selectedApps.filter((a) => !a.startsWith(`${ns}/`)));
+    } else {
+      onSelectedNamespacesChange(selectedNamespaces.filter((x) => x !== ns));
+    }
+  }
+
+  function toggleApp(value: string, on: boolean) {
+    onSelectedAppsChange(on ? [...selectedApps, value] : selectedApps.filter((a) => a !== value));
+  }
+
   if (loading && namespaces.length === 0) return <p className="text-sm text-slate-500">Loading&hellip;</p>;
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <Label>Namespaces *</Label>
+        <Label>Namespaces and apps *</Label>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-1.5 text-xs text-slate-600">
             <Checkbox checked={selectAll} onCheckedChange={(v) => onSelectAllChange(v === true)} />
@@ -132,7 +153,13 @@ export function K8sNamespacePicker({
           <RefreshButton loading={loading} onRefresh={onRefresh} />
         </div>
       </div>
-      {selectAll && <p className="text-xs text-slate-500">Tracking all namespaces -- any new one will appear here automatically.</p>}
+      {selectAll ? (
+        <p className="text-xs text-slate-500">Tracking all namespaces -- any new one will appear here automatically.</p>
+      ) : (
+        <p className="text-xs text-slate-500">
+          Tick a namespace to include all of it (new pods too), or tick only the apps you need inside it.
+        </p>
+      )}
       {namespaces.length === 0 ? (
         <p className="text-sm text-slate-500">No namespaces discovered on this cluster yet. Click Refresh to try again.</p>
       ) : (
@@ -140,31 +167,39 @@ export function K8sNamespacePicker({
           {namespaces.map((ns) => {
             const nsPods = podsByNamespace.get(ns) ?? [];
             const apps = groupPodsByApp(nsPods);
-            const checked = selectAll || selectedNamespaces.includes(ns);
+            const wholeNamespace = selectAll || selectedNamespaces.includes(ns);
+            const pickedApps = apps.filter((a) => selectedApps.includes(`${ns}/${a.key}`)).length;
             return (
               <div key={ns} className="rounded-md border border-slate-200 p-2">
                 <label className="flex items-center gap-2 text-sm font-medium">
                   <Checkbox
-                    checked={checked}
+                    checked={wholeNamespace}
                     disabled={selectAll}
-                    onCheckedChange={(v) =>
-                      onSelectedNamespacesChange(v === true ? [...selectedNamespaces, ns] : selectedNamespaces.filter((x) => x !== ns))
-                    }
+                    onCheckedChange={(v) => toggleNamespace(ns, v === true)}
                   />
                   {ns}
                   <span className="text-xs font-normal text-slate-400">
                     {apps.length} app{apps.length === 1 ? "" : "s"}
+                    {!wholeNamespace && pickedApps > 0 && ` · ${pickedApps} selected`}
                   </span>
                 </label>
                 {apps.length > 0 && (
                   <div className="mt-1.5 ml-6 flex flex-col gap-1">
-                    {apps.map((a) => (
-                      <div key={a.key} className="flex items-center gap-2 text-xs text-slate-500">
-                        <span className="text-slate-700">{a.label}</span>
-                        {a.pods.length > 1 && <span>&times;{a.pods.length}</span>}
-                        {a.nodes.length > 0 && <span>on {a.nodes.join(", ")}</span>}
-                      </div>
-                    ))}
+                    {apps.map((a) => {
+                      const value = `${ns}/${a.key}`;
+                      return (
+                        <label key={a.key} className="flex items-center gap-2 text-xs text-slate-500">
+                          <Checkbox
+                            checked={wholeNamespace || selectedApps.includes(value)}
+                            disabled={wholeNamespace}
+                            onCheckedChange={(v) => toggleApp(value, v === true)}
+                          />
+                          <span className="text-slate-700">{a.label}</span>
+                          {a.pods.length > 1 && <span>&times;{a.pods.length}</span>}
+                          {a.nodes.length > 0 && <span>on {a.nodes.join(", ")}</span>}
+                        </label>
+                      );
+                    })}
                   </div>
                 )}
               </div>

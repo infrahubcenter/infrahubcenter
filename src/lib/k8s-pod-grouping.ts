@@ -1,22 +1,52 @@
 import type { K8sOverviewPod } from "@/lib/api";
 
-// A Deployment's replica pods get names like
-// "<app>-<replicaset-hash>-<pod-hash>" (or "<app>-<ordinal>" for a
-// StatefulSet) -- stripping those trailing Kubernetes-generated segments
-// recovers the shared app name, so a pod picker can show one row per app
-// ("checkout ×3", one node per replica) instead of one row per
-// near-identical pod. Purely a display/selection-grouping heuristic --
-// it never changes what's actually persisted (dashboards still store
-// whole namespaces), so a fresh replica always shows up too.
+// Kubernetes adds a random suffix to every replica's pod name:
+// "<app>-<replicaset hash>-<5 chars>" for a Deployment, "<app>-<5 chars>"
+// for a DaemonSet or Job -- drawn from an alphabet with no vowels, so a
+// name like "etcd-desktop-control-plane" is never mistaken for one -- or
+// "<app>-<ordinal>" for a StatefulSet. Stripping it recovers the app, so
+// a picker shows one row per app ("coredns ×2") instead of one per
+// near-identical pod. Dashboards can store a whole namespace or single
+// apps ("<namespace>/<app>"), so a fresh replica always shows up too.
+// Keep in step with K8sPodAppKey in the API
+// (internal/services/log_dashboard_alerts.go) -- alerts use the same
+// grouping to decide which pods a dashboard covers.
+const K8S_SUFFIX = "[bcdfghjklmnpqrstvwxz2456789]";
+const DEPLOYMENT_POD = new RegExp(`^(.+)-${K8S_SUFFIX}{6,10}-${K8S_SUFFIX}{5}$`);
+const GENERATED_POD = new RegExp(`^(.+)-${K8S_SUFFIX}{5}$`);
+const ORDINAL_POD = /^(.+)-\d+$/;
+
+export function podNameAppKey(name: string): string {
+  const deployment = name.match(DEPLOYMENT_POD);
+  if (deployment) return deployment[1];
+  const generated = name.match(GENERATED_POD);
+  if (generated) {
+    // A CronJob's pods are "<cronjob>-<schedule time>-<5 chars>".
+    const ordinal = generated[1].match(ORDINAL_POD);
+    return ordinal ? ordinal[1] : generated[1];
+  }
+  const ordinal = name.match(ORDINAL_POD);
+  if (ordinal) return ordinal[1];
+  return name;
+}
+
 export function podAppKey(pod: K8sOverviewPod): string {
   const name = pod.pod_name ?? pod.display_name ?? "";
-  // Deployment/ReplicaSet pod: <app>-<9-10 char alnum hash>-<5 char alnum hash>
-  const deploymentMatch = name.match(/^(.+)-[a-z0-9]{9,10}-[a-z0-9]{5}$/);
-  if (deploymentMatch) return deploymentMatch[1];
-  // StatefulSet/DaemonSet-ish pod: <app>-<ordinal>
-  const ordinalMatch = name.match(/^(.+)-\d+$/);
-  if (ordinalMatch) return ordinalMatch[1];
-  return name || pod.pod_id;
+  return name ? podNameAppKey(name) : pod.pod_id;
+}
+
+// The value a dashboard's APP filter stores for this pod.
+export function podAppFilterValue(pod: K8sOverviewPod): string | null {
+  return pod.namespace ? `${pod.namespace}/${podAppKey(pod)}` : null;
+}
+
+// Whether a dashboard's selection (whole namespaces and/or single apps;
+// neither = everything) includes this pod.
+export function podInDashboardScope(pod: K8sOverviewPod, namespaces: Set<string>, apps: Set<string>): boolean {
+  if (namespaces.size === 0 && apps.size === 0) return true;
+  if (pod.namespace && namespaces.has(pod.namespace)) return true;
+  const app = podAppFilterValue(pod);
+  return app !== null && apps.has(app);
 }
 
 export type K8sAppGroup = { key: string; label: string; pods: K8sOverviewPod[]; nodes: string[] };

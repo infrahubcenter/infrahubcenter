@@ -6,6 +6,10 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { MonitoringBreadcrumb } from "@/components/infrastructure/monitoring-breadcrumb";
 import { DockerLogsBrowser } from "@/components/infrastructure/docker-logs-browser";
 import { DashboardHeaderActions } from "@/components/infrastructure/dashboard-header-actions";
+import { LogDashboardAlertRuleForm } from "@/components/infrastructure/log-dashboard-alert-rule-form";
+import { Bell } from "lucide-react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   isAdminRole,
@@ -43,6 +47,8 @@ export default function LogsDockerDashboardPage() {
   const [dashboard, setDashboard] = useState<MonitoringDashboard | null>(null);
   const [containers, setContainers] = useState<DockerOverviewContainer[]>([]);
   const [error, setError] = useState(false);
+  const [showAlertForm, setShowAlertForm] = useState(false);
+  const [alertSaved, setAlertSaved] = useState(false);
 
   useEffect(() => {
     getMonitoringDashboard(dashboardId)
@@ -86,13 +92,45 @@ export default function LogsDockerDashboardPage() {
           <Badge className="gap-1 bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200">Live</Badge>
         </div>
         {isAdmin && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setAlertSaved(false);
+                setShowAlertForm((v) => !v);
+              }}
+              title="Alert on errors in this dashboard's logs"
+            >
+              <Bell className="h-4 w-4" /> Create alert
+            </Button>
           <DashboardHeaderActions
             dashboard={dashboard}
             onUpdated={setDashboard}
             backHref={dashboard.monitoring_folder_id ? `/logs/docker/folders/${dashboard.monitoring_folder_id}` : "/logs/docker"}
           />
+          </div>
         )}
       </div>
+      {isAdmin && showAlertForm && (
+        <LogDashboardAlertRuleForm
+          dashboard={dashboard}
+          onSaved={() => {
+            setShowAlertForm(false);
+            setAlertSaved(true);
+          }}
+          onCancel={() => setShowAlertForm(false)}
+        />
+      )}
+      {alertSaved && (
+        <p className="text-sm text-emerald-700">
+          Alert saved. Manage it under{" "}
+          <Link href="/alerts?tab=rules" className="underline">
+            Alerts &rsaquo; Alert Rules
+          </Link>
+          .
+        </p>
+      )}
       <DockerLogsBrowser
         containers={scopedContainers}
         isAdmin={isAdmin}

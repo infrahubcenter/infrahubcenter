@@ -319,6 +319,19 @@ const POD_SEEDS: { ns: string; app: string; replicas: number; phase?: K8sOvervie
   { ns: "batch", app: "nightly-export", replicas: 1, phase: "FAILED", restarts: 3 },
 ];
 
+// "<app>-<replicaset hash>-<5 chars>", from the vowel-free alphabet
+// Kubernetes uses -- so the dashboard picker groups replicas by app.
+const K8S_ALPHABET = "bcdfghjklmnpqrstvwxz2456789";
+function k8sSuffix(seed: number, length: number): string {
+  let out = "";
+  let x = seed * 2654435761;
+  for (let i = 0; i < length; i++) {
+    x = (x * 1103515245 + 12345) % 2147483648;
+    out += K8S_ALPHABET[x % K8S_ALPHABET.length];
+  }
+  return out;
+}
+
 export function k8sPods(index: number): K8sOverviewPod[] {
   const cluster = K8S_CLUSTERS[index];
   const nodes = k8sNodes(index);
@@ -331,7 +344,7 @@ export function k8sPods(index: number): K8sOverviewPod[] {
       pods.push({
         pod_id: uid("11", index * 1000 + n),
         namespace: index === 0 ? p.ns : `${p.ns}-staging`,
-        pod_name: `${p.app}-${(7000 + n * 37).toString(36)}-${(n * 991).toString(36).slice(-5)}`,
+        pod_name: `${p.app}-${k8sSuffix(index * 100 + POD_SEEDS.indexOf(p) + 1, 10)}-${k8sSuffix(index * 1000 + n + 7, 5)}`,
         display_name: p.app,
         node_name: nodes[n % nodes.length].name,
         phase,
@@ -447,7 +460,17 @@ export const ALERT_RULES: AlertRule[] = [
   { id: uid("16", 5), resource_id: DATABASES[4].resource_id, alert_type: "DATABASE_UNAVAILABLE", metric: "availability", condition: "==", threshold: 0, duration_seconds: 120, severity: "CRITICAL", notification_policy_id: uid("17", 1), enabled: true, created_at: ago(60 * 24 * 10) },
   { id: uid("16", 6), resource_id: DOCKER_HOSTS[0].resource_id, alert_type: "DOCKER_HOST_CONTAINER_HIGH_CPU", metric: "cpu_percent", condition: ">", threshold: 50, duration_seconds: 300, severity: "WARNING", notification_policy_id: uid("17", 2), enabled: true, created_at: ago(60 * 24 * 7) },
   { id: uid("16", 7), resource_id: K8S_CLUSTERS[0].resource_id, alert_type: "K8S_POD_RESTARTS", metric: "restart_count", condition: ">", threshold: 3, duration_seconds: 600, severity: "WARNING", enabled: false, created_at: ago(60 * 24 * 5) },
+  // Log Explorer rules: a whole log dashboard, one alert per app/container.
+  { id: uid("16", 8), resource_id: K8S_CLUSTERS[0].resource_id, monitoring_dashboard_id: uid("20", 4), alert_type: "K8S_LOGS_POD_PROBLEM", metric: "K8S_POD_PROBLEM_COUNT", condition: ">=", threshold: 1, duration_seconds: 600, severity: "CRITICAL", notification_policy_id: uid("17", 1), enabled: true, match_options: { k8s_problems: [], log_lines: 20 }, created_at: ago(60 * 24 * 3) },
+  { id: uid("16", 9), resource_id: K8S_CLUSTERS[0].resource_id, monitoring_dashboard_id: uid("20", 4), alert_type: "K8S_LOGS_ERROR_LINES", metric: "LOG_MATCH_COUNT", condition: ">=", threshold: 3, duration_seconds: 300, severity: "WARNING", notification_policy_id: uid("17", 1), enabled: true, match_options: { log_categories: ["SUSPICIOUS_ACTIVITY", "AUTH_SECURITY"], log_lines: 20 }, created_at: ago(60 * 24 * 3) },
+  { id: uid("16", 10), resource_id: VMS[0].id, monitoring_dashboard_id: uid("20", 3), alert_type: "DOCKER_LOGS_CONTAINER_EXITED", metric: "CONTAINER_EXITED", condition: "==", threshold: 1, duration_seconds: 0, severity: "CRITICAL", notification_policy_id: uid("17", 1), enabled: true, match_options: { only_unexpected_exits: true, log_lines: 20 }, created_at: ago(60 * 24 * 2) },
 ];
+
+// Which log dashboard a Log Explorer rule watches (alert rules list).
+const RULE_DASHBOARDS: Record<string, { name: string; feature: "DOCKER_LOGS" | "K8S_LOGS" }> = {
+  [uid("20", 3)]: { name: "checkout-api logs", feature: "DOCKER_LOGS" },
+  [uid("20", 4)]: { name: "payments-gateway logs", feature: "K8S_LOGS" },
+};
 
 const RULE_RESOURCES: Record<string, { name: string; type: string; ws: string }> = Object.fromEntries([
   ...VMS.map((v) => [v.id, { name: v.name, type: "VM", ws: v.workspace_id }]),
@@ -464,11 +487,19 @@ export function resourceInfo(resourceId: string) {
 export function alertRuleList(): AlertRuleListItem[] {
   return ALERT_RULES.map((rule) => {
     const r = RULE_RESOURCES[rule.resource_id];
-    return { rule, resource_name: r?.name ?? "", resource_type: r?.type ?? "VM", workspace_id: r?.ws ?? WS_PROD.id };
+    const d = rule.monitoring_dashboard_id ? RULE_DASHBOARDS[rule.monitoring_dashboard_id] : undefined;
+    return {
+      rule, resource_name: r?.name ?? "", resource_type: r?.type ?? "VM", workspace_id: r?.ws ?? WS_PROD.id,
+      ...(d ? { monitoring_dashboard_name: d.name, monitoring_dashboard_feature: d.feature } : {}),
+    };
   });
 }
 
 export function alerts(): Alert[] {
+  const payPod = (() => {
+    const p = k8sPods(0).find((x) => x.namespace === "payments");
+    return p ? `payments/${p.pod_name}` : "payments/payments-gateway";
+  })();
   const mk = (n: number, a: Partial<Alert> & Pick<Alert, "resource_id" | "alert_type" | "severity" | "status" | "metric" | "threshold" | "title">, minutes: number): Alert => {
     const r = RULE_RESOURCES[a.resource_id];
     return {
@@ -492,6 +523,52 @@ export function alerts(): Alert[] {
     mk(4, { resource_id: DOCKER_HOSTS[0].resource_id, alert_type: "DOCKER_HOST_CONTAINER_HIGH_CPU", severity: "WARNING", status: "ACTIVE", metric: "cpu_percent", current_value: 64, threshold: 50, title: "image-resizer container CPU above 50%", container_name: "image-resizer" }, 22),
     mk(5, { resource_id: VMS[7].id, alert_type: "VM_HIGH_DISK", severity: "WARNING", status: "RESOLVED", metric: "storage_usage_percent", current_value: 78, threshold: 80, title: "Disk usage on analytics-etl-01", resolved_at: ago(200) }, 300),
     mk(6, { resource_id: VMS[0].id, alert_type: "VM_HIGH_MEMORY", severity: "INFO", status: "SUPPRESSED", metric: "memory_usage_percent", current_value: 91, threshold: 90, title: "Memory pressure on prod-web-01", suppressed_at: ago(50), suppressed_reason: "Planned load test" }, 90),
+    mk(7, {
+      resource_id: K8S_CLUSTERS[0].resource_id, alert_rule_id: uid("16", 8), alert_type: "K8S_LOGS_POD_PROBLEM", severity: "CRITICAL", status: "ACTIVE",
+      metric: "K8S_POD_PROBLEM_COUNT", current_value: 2, threshold: 1, title: `payments-gateway logs: Kubernetes pod problem — ${payPod}`,
+      subject_label: payPod,
+      description: `Pod ${payPod} on ip-10-0-2-41 (Running, 4 restarts): crash loop, out of memory (OOMKilled), restarted. CrashLoopBackOff (container gateway): back-off 2m40s restarting failed container=gateway. OOMKilled (container gateway) exit code 137.`,
+      log_excerpt: [
+        `now  WAITING  CrashLoopBackOff (container gateway): back-off 2m40s restarting failed container=gateway`,
+        `${ago(12)}  LAST_TERMINATED  OOMKilled (container gateway) exit code 137`,
+        `--- last 6 log lines before the container stopped ---`,
+        `${ago(12)}  INFO  settlement batch 4411 started (2,000 transactions)`,
+        `${ago(12)}  INFO  loading merchant ledger into memory`,
+        `${ago(12)}  WARN  heap usage 92% (limit 512Mi)`,
+        `${ago(12)}  WARN  heap usage 98% (limit 512Mi)`,
+        `${ago(12)}  ERROR allocation failed: cannot reserve 64MiB`,
+        `${ago(12)}  fatal error: runtime: out of memory`,
+      ].join("\n"),
+    }, 12),
+    mk(8, {
+      resource_id: K8S_CLUSTERS[0].resource_id, alert_rule_id: uid("16", 9), alert_type: "K8S_LOGS_ERROR_LINES", severity: "WARNING", status: "ACTIVE",
+      metric: "LOG_MATCH_COUNT", current_value: 7, threshold: 3, title: `payments-gateway logs: Errors or suspicious activity in pod logs — ${payPod}`,
+      subject_label: payPod,
+      description: `7 matching log lines (suspicious activity, auth failures) in the last 5 minutes from ${payPod}.`,
+      log_excerpt: [
+        `${ago(4)}  authentication failed for user 'admin' from 203.0.113.7`,
+        `${ago(4)}  authentication failed for user 'root' from 203.0.113.7`,
+        `${ago(3)}  GET /api/v1/../../etc/passwd 404 from 203.0.113.7`,
+        `${ago(3)}  GET /.env 404 from 203.0.113.7`,
+        `${ago(2)}  POST /api/v1/charges?id=1 UNION SELECT card_number FROM cards 400 from 203.0.113.7`,
+        `${ago(2)}  invalid token for client 'mobile-app' from 203.0.113.7`,
+        `${ago(1)}  too many failed login attempts for 'admin', locking for 15m`,
+      ].join("\n"),
+    }, 4),
+    mk(9, {
+      resource_id: VMS[0].id, alert_rule_id: uid("16", 10), alert_type: "DOCKER_LOGS_CONTAINER_EXITED", severity: "CRITICAL", status: "ACKNOWLEDGED",
+      metric: "CONTAINER_EXITED", current_value: 1, threshold: 1, title: "checkout-api logs: Container stopped — checkout-api",
+      subject_label: "checkout-api", acknowledged_by: "Priya Sharma", acknowledged_at: ago(25),
+      description: "Container checkout-api stopped with exit code 1 (application error).",
+      log_excerpt: [
+        `${ago(31)}  INFO  checkout-api 2.14.0 starting`,
+        `${ago(31)}  INFO  connecting to postgres at catalog-db:5432`,
+        `${ago(31)}  WARN  postgres connection attempt 1/3 failed: connection refused`,
+        `${ago(31)}  WARN  postgres connection attempt 2/3 failed: connection refused`,
+        `${ago(31)}  ERROR postgres connection attempt 3/3 failed: connection refused`,
+        `${ago(31)}  FATAL cannot start without a database, exiting`,
+      ].join("\n"),
+    }, 31),
   ];
 }
 
@@ -566,13 +643,22 @@ export function monitoringFolders(): MonitoringFolder[] {
   ];
 }
 
+// Docker dashboards store container ids, not names.
+function containerFilters(names: string[]): MonitoringDashboard["resource_selection"] {
+  const containers = vmContainers(VMS[0].id);
+  return names.flatMap((n) => {
+    const c = containers.find((x) => x.name === n);
+    return c ? [{ type: "CONTAINER" as const, value: c.id }] : [];
+  });
+}
+
 export function monitoringDashboards(): MonitoringDashboard[] {
   const folders = monitoringFolders();
   const base = { workspace_id: WS_PROD.id, workspace_name: WS_PROD.name, refresh_interval_seconds: 30, created_at: ago(60 * 24 * 10) };
   return [
-    { ...base, id: uid("20", 1), monitoring_folder_id: folders[0].id, folder_name: folders[0].name, feature: "DOCKER_MONITORING", name: "Storefront containers", description: "Web, checkout and cache", vm_resource_id: VMS[0].id, bound_resource_name: VMS[0].name, bound_resource_type: "VM", bound_resource_status: "ONLINE", resource_selection: [{ type: "CONTAINER", value: "storefront-web" }, { type: "CONTAINER", value: "checkout-api" }, { type: "CONTAINER", value: "redis-cache" }], widgets: [{ type: "CPU_CHART", position: 0 }, { type: "MEMORY_CHART", position: 1 }, { type: "NETWORK_CHART", position: 2 }, { type: "CONTAINER_COUNT", position: 3 }, { type: "RESTART_COUNT", position: 4 }] },
+    { ...base, id: uid("20", 1), monitoring_folder_id: folders[0].id, folder_name: folders[0].name, feature: "DOCKER_MONITORING", name: "Storefront containers", description: "Web, checkout and cache", vm_resource_id: VMS[0].id, bound_resource_name: VMS[0].name, bound_resource_type: "VM", bound_resource_status: "ONLINE", resource_selection: containerFilters(["storefront-web", "checkout-api", "redis-cache"]), widgets: [{ type: "CPU_CHART", position: 0 }, { type: "MEMORY_CHART", position: 1 }, { type: "NETWORK_CHART", position: 2 }, { type: "CONTAINER_COUNT", position: 3 }, { type: "RESTART_COUNT", position: 4 }] },
     { ...base, id: uid("20", 2), monitoring_folder_id: folders[1].id, folder_name: folders[1].name, feature: "K8S_MONITORING", name: "prod-eks overview", k8s_cluster_resource_id: K8S_CLUSTERS[0].resource_id, bound_resource_name: K8S_CLUSTERS[0].name, bound_resource_type: "K8S_CLUSTER", bound_resource_status: "CONNECTED", resource_selection: [{ type: "NAMESPACE", value: "storefront" }, { type: "NAMESPACE", value: "payments" }], widgets: [{ type: "CPU_CHART", position: 0 }, { type: "MEMORY_CHART", position: 1 }, { type: "POD_COUNT", position: 2 }, { type: "RESOURCE_STATUS", position: 3 }] },
-    { ...base, id: uid("20", 3), monitoring_folder_id: folders[2].id, folder_name: folders[2].name, feature: "DOCKER_LOGS", name: "checkout-api logs", vm_resource_id: VMS[0].id, bound_resource_name: VMS[0].name, bound_resource_type: "VM", bound_resource_status: "ONLINE", resource_selection: [{ type: "CONTAINER", value: "checkout-api" }], widgets: [] },
+    { ...base, id: uid("20", 3), monitoring_folder_id: folders[2].id, folder_name: folders[2].name, feature: "DOCKER_LOGS", name: "checkout-api logs", vm_resource_id: VMS[0].id, bound_resource_name: VMS[0].name, bound_resource_type: "VM", bound_resource_status: "ONLINE", resource_selection: containerFilters(["checkout-api"]), widgets: [] },
     { ...base, id: uid("20", 4), monitoring_folder_id: folders[3].id, folder_name: folders[3].name, feature: "K8S_LOGS", name: "payments-gateway logs", k8s_cluster_resource_id: K8S_CLUSTERS[0].resource_id, bound_resource_name: K8S_CLUSTERS[0].name, bound_resource_type: "K8S_CLUSTER", bound_resource_status: "CONNECTED", resource_selection: [{ type: "NAMESPACE", value: "payments" }], widgets: [] },
   ];
 }
