@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bell, Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Cloud, Container, Database, FileText, HardDrive, Network, Pencil, Plus, Server, SlidersHorizontal, Trash2 } from "lucide-react";
 import { RouteGuard } from "@/components/auth/route-guard";
 import { ConfirmDialog } from "@/components/infrastructure/confirm-dialog";
-import { LogDashboardAlertRuleForm } from "@/components/infrastructure/log-dashboard-alert-rule-form";
+import { LogDashboardAlertRuleForm, type LogKind } from "@/components/infrastructure/log-dashboard-alert-rule-form";
 import { SeverityBadge } from "@/components/infrastructure/severity-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -67,7 +67,16 @@ import {
   vmChoiceFor,
   type ResourceTypeChoice,
 } from "@/lib/resource-labels";
-import { thresholdExplanation, thresholdKind, thresholdPresets, thresholdUnit } from "@/lib/alert-thresholds";
+import {
+  ALERT_TYPE_HINTS,
+  DURATION_PRESETS,
+  RECOMMENDED_ALERT_TYPES,
+  alertTypeGroup,
+  thresholdExplanation,
+  thresholdKind,
+  thresholdPresets,
+  thresholdUnit,
+} from "@/lib/alert-thresholds";
 
 // Resource Type dropdown order -- the sidebar's own order.
 const RESOURCE_CHOICE_ORDER: ResourceTypeChoice[] = [
@@ -80,6 +89,20 @@ const RESOURCE_CHOICE_ORDER: ResourceTypeChoice[] = [
 ];
 
 const CONDITIONS: AlertCondition[] = [">", "<", ">=", "<=", "=="];
+
+const CHOICE_ICONS: Record<ResourceTypeChoice, typeof Server> = {
+  VM_INVENTORY: Server,
+  VM_HOST_METRICS: HardDrive,
+  DATABASE: Database,
+  OBJECT_STORAGE: Cloud,
+  DOCKER_HOST: Container,
+  K8S_CLUSTER: Network,
+};
+
+const LOG_CHOICES: { kind: LogKind; label: string; hint: string }[] = [
+  { kind: "DOCKER", label: "Docker Log Explorer", hint: "Errors, attacks, stopped containers" },
+  { kind: "K8S", label: "Kubernetes Log Explorer", hint: "Pod problems, errors, attacks" },
+];
 
 // Friendly names for the log-dashboard rule types.
 const LOG_RULE_LABELS: Record<string, string> = {
@@ -125,8 +148,7 @@ export function AlertRulesContent() {
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<AlertRuleListItem | null>(null);
-  // Log-dashboard rules (Docker/Kubernetes Log Explorer) have their own form.
-  const [showLogForm, setShowLogForm] = useState(false);
+  // Log-dashboard rules (Docker/Kubernetes Log Explorer) have their own edit form.
   const [editingLog, setEditingLog] = useState<AlertRuleListItem | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -270,7 +292,6 @@ export function AlertRulesContent() {
             disabled={busyId === item.rule.id}
             onClick={() => {
               setShowForm(false);
-              setShowLogForm(false);
               if (item.rule.monitoring_dashboard_id) {
                 setEditing(null);
                 setEditingLog(item);
@@ -310,7 +331,7 @@ export function AlertRulesContent() {
             Configure when a metric breach on a Compute Inventory or Host Metrics &amp; Logs VM, a Database
             Observability database, an Object Storage (S3) bucket, a Docker Monitoring host/container or a
             Kubernetes Monitoring cluster/pod -- or a burst of error-level logs from Log Management -- should raise
-            an alert. New Log Alert watches a whole Docker or Kubernetes Log Explorer dashboard: pod problems
+            an alert. Under Log Management, a rule watches whole Docker or Kubernetes Log Explorer dashboards: pod problems
             (ImagePullBackOff, crash loops, OOM kills, access denied), errors or suspicious activity in logs, and
             containers that stop. Rules never execute anything -- they only observe and notify.
           </p>
@@ -318,22 +339,9 @@ export function AlertRulesContent() {
         <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
-            variant="outline"
             onClick={() => {
               setEditing(null);
               setEditingLog(null);
-              setShowForm(false);
-              setShowLogForm((v) => !v);
-            }}
-          >
-            <Bell className="h-4 w-4" /> New Log Alert
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => {
-              setEditing(null);
-              setEditingLog(null);
-              setShowLogForm(false);
               setShowForm((v) => !v);
             }}
           >
@@ -369,16 +377,6 @@ export function AlertRulesContent() {
             load();
           }}
           onCancel={() => setEditingLog(null)}
-        />
-      )}
-
-      {showLogForm && (
-        <LogDashboardAlertRuleForm
-          onSaved={() => {
-            setShowLogForm(false);
-            load();
-          }}
-          onCancel={() => setShowLogForm(false)}
         />
       )}
 
@@ -464,6 +462,9 @@ export function NewAlertRuleForm({
   const [notificationPolicies, setNotificationPolicies] = useState<NotificationPolicy[]>([]);
 
   const [resourceKind, setResourceKind] = useState<AlertRuleResourceKind>(lockedResourceKind ?? "VM");
+  // Log Management section: a Docker/Kubernetes Log Explorer rule instead
+  // of an infrastructure one.
+  const [logChoice, setLogChoice] = useState<LogKind | null>(null);
   const [typeChoice, setTypeChoice] = useState<ResourceTypeChoice>(
     lockedResourceKind && lockedResourceKind !== "VM" ? lockedResourceKind : "VM_INVENTORY"
   );
@@ -548,9 +549,80 @@ export function NewAlertRuleForm({
   const metricTemplates = availableTemplates.filter((t) => !isLogBasedAlertTemplate(t));
   const logTemplates = availableTemplates.filter(isLogBasedAlertTemplate);
   function handleTypeChoiceChange(choice: ResourceTypeChoice) {
+    setLogChoice(null);
     setTypeChoice(choice);
     handleResourceKindChange(choiceToType(choice));
   }
+
+  function tickRecommended() {
+    const next: Record<string, TypeSettings> = {};
+    for (const t of availableTemplates) {
+      if (RECOMMENDED_ALERT_TYPES.has(t.type)) {
+        next[t.type] = selectedTypes[t.type] ?? {
+          condition: t.default_condition,
+          threshold: String(t.default_threshold),
+          duration: String(t.default_duration_seconds),
+        };
+      }
+    }
+    setSelectedTypes((prev) => ({ ...prev, ...next }));
+  }
+
+  // Every resource type, visible at once: Infrastructure Monitoring and
+  // Log Management, each a row of tiles.
+  const tiles = lockedResourceId ? null : (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1.5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Infrastructure Monitoring</p>
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+          {RESOURCE_CHOICE_ORDER.map((c) => {
+            const Icon = CHOICE_ICONS[c];
+            const active = !logChoice && typeChoice === c;
+            return (
+              <button
+                key={c}
+                type="button"
+                onClick={() => handleTypeChoiceChange(c)}
+                disabled={submitting}
+                className={`flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors ${
+                  active ? "border-sky-500 bg-sky-50 ring-1 ring-sky-500" : "border-slate-200 hover:border-sky-300 hover:bg-slate-50"
+                }`}
+              >
+                <Icon className={`h-4 w-4 ${active ? "text-sky-700" : "text-slate-500"}`} />
+                <span className="text-sm font-medium text-slate-900">{RESOURCE_TYPE_CHOICE_LABEL[c]}</span>
+                <span className="text-xs text-slate-500">
+                  {resourceCounts[c]} {resourceCounts[c] === 1 ? "resource" : "resources"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Log Management</p>
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+          {LOG_CHOICES.map((c) => {
+            const active = logChoice === c.kind;
+            return (
+              <button
+                key={c.kind}
+                type="button"
+                onClick={() => setLogChoice(c.kind)}
+                disabled={submitting}
+                className={`flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors ${
+                  active ? "border-sky-500 bg-sky-50 ring-1 ring-sky-500" : "border-slate-200 hover:border-sky-300 hover:bg-slate-50"
+                }`}
+              >
+                <FileText className={`h-4 w-4 ${active ? "text-sky-700" : "text-slate-500"}`} />
+                <span className="text-sm font-medium text-slate-900">{c.label}</span>
+                <span className="text-xs text-slate-500">{c.hint}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 
   function handleResourceKindChange(kind: AlertRuleResourceKind) {
     setResourceKind(kind);
@@ -651,12 +723,22 @@ export function NewAlertRuleForm({
     const unit = thresholdUnit(t);
     return (
       <div key={t.type} className={cfg ? "rounded-md border border-sky-200 bg-sky-50/40 p-3" : "rounded-md border border-slate-200 p-3"}>
-        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-800">
-          <Checkbox checked={!!cfg} onCheckedChange={(v) => toggleType(t, v === true)} disabled={submitting || !resourceId} />
-          {t.label}
+        <label className="flex cursor-pointer items-start gap-2 text-sm font-medium text-slate-800">
+          <Checkbox className="mt-0.5" checked={!!cfg} onCheckedChange={(v) => toggleType(t, v === true)} disabled={submitting || !resourceId} />
+          <span>
+            <span className="flex items-center gap-1.5">
+              {t.label}
+              {RECOMMENDED_ALERT_TYPES.has(t.type) && (
+                <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-200 ring-inset">
+                  Recommended
+                </span>
+              )}
+            </span>
+            {ALERT_TYPE_HINTS[t.type] && <span className="block text-xs font-normal text-slate-500">{ALERT_TYPE_HINTS[t.type]}</span>}
+          </span>
         </label>
         {cfg && (
-          <div className="mt-3 grid grid-cols-1 gap-3 pl-6 sm:grid-cols-[120px_minmax(0,1fr)_140px]">
+          <div className="mt-3 grid grid-cols-1 gap-3 pl-6 sm:grid-cols-[110px_minmax(0,1fr)]">
             <div className="flex flex-col gap-1">
               <Label className="text-xs">Condition</Label>
               {kind === "flag" ? (
@@ -709,13 +791,49 @@ export function NewAlertRuleForm({
                 </div>
               )}
             </div>
-            <div className="flex flex-col gap-1">
-              <Label className="text-xs">Duration (seconds)</Label>
-              <Input type="number" min={0} value={cfg.duration} onChange={(e) => updateType(t.type, { duration: e.target.value })} disabled={submitting} />
+            <div className="flex flex-col gap-1 sm:col-span-2">
+              <Label className="text-xs">Must last</Label>
+              <div className="flex flex-wrap items-center gap-2">
+                {DURATION_PRESETS.map((d) => (
+                  <button
+                    key={d.seconds}
+                    type="button"
+                    onClick={() => updateType(t.type, { duration: String(d.seconds) })}
+                    disabled={submitting}
+                    className={
+                      Number(cfg.duration) === d.seconds
+                        ? "rounded-full bg-sky-600 px-2.5 py-1 text-xs font-medium text-white"
+                        : "rounded-full border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:border-sky-400 hover:text-sky-700"
+                    }
+                  >
+                    {d.label}
+                  </button>
+                ))}
+                <Input
+                  type="number"
+                  min={0}
+                  className="h-7 w-24"
+                  value={cfg.duration}
+                  onChange={(e) => updateType(t.type, { duration: e.target.value })}
+                  disabled={submitting}
+                  aria-label="Duration in seconds"
+                />
+                <span className="text-xs text-slate-500">seconds</span>
+              </div>
             </div>
-            <p className="text-xs text-sky-800 sm:col-span-3">{thresholdExplanation(t, cfg.condition, cfg.threshold, cfg.duration)}</p>
+            <p className="text-xs text-sky-800 sm:col-span-2">{thresholdExplanation(t, cfg.condition, cfg.threshold, cfg.duration)}</p>
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (logChoice) {
+    return (
+      <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4">
+        <h3 className="text-sm font-semibold text-slate-900">New Alert Rule</h3>
+        {tiles}
+        <LogDashboardAlertRuleForm key={logChoice} logKind={logChoice} embedded onSaved={onCreated} onCancel={onCancel} />
       </div>
     );
   }
@@ -723,27 +841,12 @@ export function NewAlertRuleForm({
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4">
       <h3 className="text-sm font-semibold text-slate-900">New Alert Rule</h3>
+      {tiles}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {!lockedResourceId && (
           <>
-            <div className="flex flex-col gap-1.5">
-              <Label>Resource Type</Label>
-              <Select value={typeChoice} onValueChange={(v) => handleTypeChoiceChange((v as ResourceTypeChoice) ?? "VM_INVENTORY")} disabled={submitting}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {RESOURCE_CHOICE_ORDER.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {RESOURCE_TYPE_CHOICE_LABEL[c]} ({resourceCounts[c]})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5 sm:col-span-2">
               <Label>{RESOURCE_TYPE_CHOICE_ITEM[typeChoice]}</Label>
               <Select
                 value={resourceId}
@@ -756,7 +859,7 @@ export function NewAlertRuleForm({
                 }}
                 disabled={submitting}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue
                     placeholder={resourceCounts[typeChoice] === 0 ? `No ${RESOURCE_TYPE_CHOICE_ITEM[typeChoice]} registered yet` : `Select a ${RESOURCE_TYPE_CHOICE_ITEM[typeChoice]}`}
                   />
@@ -865,10 +968,22 @@ export function NewAlertRuleForm({
 
         <div className="flex flex-col gap-2 sm:col-span-2">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <Label>Alert Types</Label>
-            {Object.keys(selectedTypes).length > 0 && (
-              <span className="text-xs text-slate-500">{Object.keys(selectedTypes).length} selected -- one rule is created per type</span>
-            )}
+            <Label>What to alert on</Label>
+            <div className="flex items-center gap-3">
+              {Object.keys(selectedTypes).length > 0 && (
+                <span className="text-xs text-slate-500">{Object.keys(selectedTypes).length} selected -- one rule is created per type</span>
+              )}
+              {resourceId && availableTemplates.some((t) => RECOMMENDED_ALERT_TYPES.has(t.type)) && (
+                <Button type="button" variant="outline" size="sm" onClick={tickRecommended} disabled={submitting}>
+                  Tick recommended
+                </Button>
+              )}
+              {Object.keys(selectedTypes).length > 0 && (
+                <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedTypes({})} disabled={submitting}>
+                  Clear
+                </Button>
+              )}
+            </div>
           </div>
           {!resourceId ? (
             <p className="text-sm text-slate-500">Choose a resource above to see the alert types available for it.</p>
@@ -882,16 +997,22 @@ export function NewAlertRuleForm({
                 raised only if the metric stays past the threshold for the whole <em>Duration</em>, so a short spike never pages
                 you. Lower thresholds warn you earlier (more alerts); higher ones only flag serious problems.
               </div>
-              {metricTemplates.length > 0 && (
-                <div className="flex flex-col gap-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Metrics</p>
-                  {metricTemplates.map(renderTypeRow)}
-                </div>
-              )}
+              {(["State", "Usage & performance"] as const).map((group) => {
+                const items = metricTemplates.filter((t) => alertTypeGroup(t) === group);
+                if (items.length === 0) return null;
+                return (
+                  <div key={group} className="flex flex-col gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      {group === "State" ? "Availability & state" : "Usage & performance"}
+                    </p>
+                    <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">{items.map(renderTypeRow)}</div>
+                  </div>
+                );
+              })}
               {logTemplates.length > 0 && (
                 <div className="flex flex-col gap-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Log Management</p>
-                  {logTemplates.map(renderTypeRow)}
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Logs</p>
+                  <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">{logTemplates.map(renderTypeRow)}</div>
                 </div>
               )}
             </>

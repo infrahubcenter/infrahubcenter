@@ -394,6 +394,25 @@ const ALERT_TEMPLATES: AlertTemplate[] = [
   { type: "K8S_LOGS_ERROR_LINES", metric: "LOG_MATCH_COUNT", label: "Errors or suspicious activity in pod logs", default_condition: ">=", default_threshold: 1, default_duration_seconds: 300, default_severity: "WARNING", applies_to_resource: "K8S_LOG_DASHBOARD" },
   { type: "DOCKER_LOGS_CONTAINER_EXITED", metric: "CONTAINER_EXITED", label: "Container stopped", default_condition: "==", default_threshold: 1, default_duration_seconds: 0, default_severity: "CRITICAL", applies_to_resource: "DOCKER_LOG_DASHBOARD" },
   { type: "DOCKER_LOGS_ERROR_LINES", metric: "LOG_MATCH_COUNT", label: "Errors or suspicious activity in container logs", default_condition: ">=", default_threshold: 1, default_duration_seconds: 300, default_severity: "WARNING", applies_to_resource: "DOCKER_LOG_DASHBOARD" },
+  // More metrics per resource (API migration 062).
+  ...([
+    ["VM_DISK_NEARLY_FULL", "FILESYSTEM_MAX_PERCENT", "A disk or mount is nearly full", ">", 90, 300, "WARNING", "VM"],
+    ["DOCKER_HOST_UNAVAILABLE", "DOCKER_HOST_UNREACHABLE", "Docker Host agent disconnected", "==", 1, 60, "CRITICAL", "DOCKER_HOST"],
+    ["DOCKER_HOST_HIGH_CPU", "HOST_CPU_PERCENT", "Host CPU usage high", ">", 90, 300, "WARNING", "DOCKER_HOST"],
+    ["DOCKER_HOST_HIGH_MEMORY", "HOST_MEMORY_PERCENT", "Host memory usage high", ">", 90, 300, "WARNING", "DOCKER_HOST"],
+    ["DOCKER_HOST_HIGH_DISK", "HOST_DISK_PERCENT", "Host disk nearly full", ">", 85, 300, "WARNING", "DOCKER_HOST"],
+    ["DOCKER_HOST_HIGH_LOAD", "HOST_LOAD_PER_CORE", "Host overloaded (load per CPU core)", ">", 1.5, 300, "WARNING", "DOCKER_HOST"],
+    ["DOCKER_HOST_CONTAINER_STOPPED", "CONTAINER_STOPPED", "Container stopped", "==", 1, 0, "CRITICAL", "DOCKER_HOST_CONTAINER"],
+    ["DOCKER_CONTAINER_HIGH_MEMORY", "CONTAINER_MEMORY_PERCENT", "Container memory usage high", ">", 90, 300, "WARNING", "DOCKER_CONTAINER"],
+    ["DOCKER_CONTAINER_RESTARTS", "CONTAINER_RESTART_COUNT", "Container restarted many times", ">=", 5, 0, "WARNING", "DOCKER_CONTAINER"],
+    ["K8S_CLUSTER_UNAVAILABLE", "K8S_CLUSTER_UNREACHABLE", "Kubernetes cluster agent disconnected", "==", 1, 60, "CRITICAL", "K8S_CLUSTER"],
+    ["K8S_CLUSTER_HIGH_NODE_CPU", "K8S_NODE_MAX_CPU_PERCENT", "A node's CPU usage is high", ">", 85, 300, "WARNING", "K8S_CLUSTER"],
+    ["K8S_CLUSTER_HIGH_NODE_MEMORY", "K8S_NODE_MAX_MEMORY_PERCENT", "A node's memory usage is high", ">", 90, 300, "WARNING", "K8S_CLUSTER"],
+    ["K8S_CLUSTER_PODS_NOT_RUNNING", "K8S_PODS_NOT_RUNNING", "Pods stuck not running", ">=", 1, 600, "WARNING", "K8S_CLUSTER"],
+  ] as const).map(([type, metric, label, condition, threshold, duration, severity, applies]) => ({
+    type, metric, label, default_condition: condition as AlertTemplate["default_condition"], default_threshold: threshold,
+    default_duration_seconds: duration, default_severity: severity as AlertTemplate["default_severity"], applies_to_resource: applies,
+  })),
 ]);
 
 function monitoringResources(): MonitoringResource[] {

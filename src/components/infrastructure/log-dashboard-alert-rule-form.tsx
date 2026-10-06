@@ -26,7 +26,7 @@ import {
 // notification) per app/container that matches. Used from Alerts > Alert
 // Rules and from a log dashboard's own "Create alert" button.
 
-type LogKind = "K8S" | "DOCKER";
+export type LogKind = "K8S" | "DOCKER";
 type RuleKind = "K8S_LOGS_POD_PROBLEM" | "K8S_LOGS_ERROR_LINES" | "DOCKER_LOGS_CONTAINER_EXITED" | "DOCKER_LOGS_ERROR_LINES";
 
 export const K8S_PROBLEM_CHOICES: { value: string; label: string }[] = [
@@ -144,9 +144,26 @@ function toggle(list: string[], value: string, on: boolean): string[] {
   return on ? [...new Set([...list, value])] : list.filter((v) => v !== value);
 }
 
+type FolderGroup = { key: string; name: string; workspace: string; dashboards: MonitoringDashboard[] };
+
+// Dashboards grouped by their folder (workspace shown alongside, since
+// folder names can repeat across workspaces).
+function groupByFolder(dashboards: MonitoringDashboard[]): FolderGroup[] {
+  const groups = new Map<string, FolderGroup>();
+  for (const d of dashboards) {
+    const key = d.monitoring_folder_id ?? `none:${d.workspace_id}`;
+    const g = groups.get(key) ?? { key, name: d.folder_name ?? "No folder", workspace: d.workspace_name, dashboards: [] };
+    g.dashboards.push(d);
+    groups.set(key, g);
+  }
+  return [...groups.values()].sort((a, b) => a.workspace.localeCompare(b.workspace) || a.name.localeCompare(b.name));
+}
+
 export function LogDashboardAlertRuleForm({
   dashboard,
   existing,
+  logKind: initialLogKind,
+  embedded,
   onSaved,
   onCancel,
 }: {
@@ -154,14 +171,20 @@ export function LogDashboardAlertRuleForm({
   dashboard?: Pick<MonitoringDashboard, "id" | "name" | "feature">;
   // Edit one existing log-dashboard rule.
   existing?: AlertRuleListItem;
+  // Docker or Kubernetes Log Explorer, when already chosen by the caller
+  // (New Rule's Log Management section).
+  logKind?: LogKind;
+  // Inside another card (New Rule) -- no border or heading of its own.
+  embedded?: boolean;
   onSaved: () => void;
   onCancel: () => void;
 }) {
   const editing = Boolean(existing);
   const lockedFeature = existing?.monitoring_dashboard_feature ?? dashboard?.feature;
-  const [logKind, setLogKind] = useState<LogKind>(lockedFeature === "DOCKER_LOGS" ? "DOCKER" : "K8S");
-  const [dashboards, setDashboards] = useState<MonitoringDashboard[]>([]);
-  const [dashboardId, setDashboardId] = useState(existing?.rule.monitoring_dashboard_id ?? dashboard?.id ?? "");
+  const logKind: LogKind = initialLogKind ?? (lockedFeature === "DOCKER_LOGS" ? "DOCKER" : "K8S");
+  const [dashboards, setDashboards] = useState<MonitoringDashboard[] | null>(null);
+  const fixedDashboardId = existing?.rule.monitoring_dashboard_id ?? dashboard?.id;
+  const [selectedDashboards, setSelectedDashboards] = useState<string[]>(fixedDashboardId ? [fixedDashboardId] : []);
   const [policies, setPolicies] = useState<NotificationPolicy[]>([]);
   const [policyId, setPolicyId] = useState(existing?.rule.notification_policy_id ?? "");
   const [logLines, setLogLines] = useState(String(existing?.rule.match_options?.log_lines ?? 20));
@@ -183,11 +206,18 @@ export function LogDashboardAlertRuleForm({
   }, []);
 
   useEffect(() => {
-    if (dashboard || existing) return;
+    if (fixedDashboardId) return;
     listMonitoringDashboards(logKind === "K8S" ? "K8S_LOGS" : "DOCKER_LOGS")
       .then((r) => setDashboards(r.dashboards))
       .catch(() => setDashboards([]));
-  }, [logKind, dashboard, existing]);
+  }, [logKind, fixedDashboardId]);
+
+  const folders = useMemo(() => groupByFolder(dashboards ?? []), [dashboards]);
+
+  function toggleFolder(g: FolderGroup, on: boolean) {
+    const ids = g.dashboards.map((d) => d.id);
+    setSelectedDashboards((cur) => (on ? [...new Set([...cur, ...ids])] : cur.filter((id) => !ids.includes(id))));
+  }
 
   const kinds = useMemo(
     () => (existing ? [existing.rule.alert_type as RuleKind] : RULES_FOR[logKind]),
@@ -202,8 +232,8 @@ export function LogDashboardAlertRuleForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!dashboardId) {
-      setError("Pick a log dashboard.");
+    if (selectedDashboards.length === 0) {
+      setError("Pick at least one log dashboard.");
       return;
     }
     const chosen = kinds.filter((k) => settings[k].on);
@@ -264,17 +294,20 @@ export function LogDashboardAlertRuleForm({
             match_options: p.match_options,
           });
         } else {
-          await createAlertRule({
-            monitoring_dashboard_id: dashboardId,
-            alert_type: p.kind,
-            condition: p.condition,
-            threshold: p.threshold,
-            duration_seconds: p.duration_seconds,
-            severity: p.severity,
-            notification_policy_id: policyId || undefined,
-            enabled,
-            match_options: p.match_options,
-          });
+          // One rule per dashboard and alert kind.
+          for (const dashboardId of selectedDashboards) {
+            await createAlertRule({
+              monitoring_dashboard_id: dashboardId,
+              alert_type: p.kind,
+              condition: p.condition,
+              threshold: p.threshold,
+              duration_seconds: p.duration_seconds,
+              severity: p.severity,
+              notification_policy_id: policyId || undefined,
+              enabled,
+              match_options: p.match_options,
+            });
+          }
         }
       }
       onSaved();
@@ -286,58 +319,79 @@ export function LogDashboardAlertRuleForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5 rounded-lg border border-slate-200 bg-white p-4">
-      <div>
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-          <Bell className="h-4 w-4" /> {editing ? "Edit log alert" : "New log alert"}
-        </h3>
-        <p className="mt-1 text-xs text-slate-500">
-          Watches every app or container in a Docker or Kubernetes Log Explorer dashboard and raises one alert per app or
-          container that matches, with the relevant log lines attached to the alert and its notifications.
-        </p>
-      </div>
+    <form onSubmit={handleSubmit} className={embedded ? "flex flex-col gap-5" : "flex flex-col gap-5 rounded-lg border border-slate-200 bg-white p-4"}>
+      {!embedded && (
+        <div>
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+            <Bell className="h-4 w-4" /> {editing ? "Edit log alert" : "New log alert"}
+          </h3>
+          <p className="mt-1 text-xs text-slate-500">
+            Watches every app or container in a {logKind === "K8S" ? "Kubernetes" : "Docker"} Log Explorer dashboard and raises one
+            alert per app or container that matches, with the relevant log lines attached to the alert and its notifications.
+          </p>
+        </div>
+      )}
 
       {dashboardName ? (
         <p className="text-sm text-slate-700">
           Dashboard: <span className="font-medium text-slate-900">{dashboardName}</span>
         </p>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <Label>Log Explorer</Label>
-            <Select
-              value={logKind}
-              onValueChange={(v) => {
-                setLogKind((v as LogKind) ?? "K8S");
-                setDashboardId("");
-              }}
-              disabled={submitting}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="K8S">Kubernetes Log Explorer</SelectItem>
-                <SelectItem value="DOCKER">Docker Log Explorer</SelectItem>
-              </SelectContent>
-            </Select>
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <Label>Folders and dashboards</Label>
+            {selectedDashboards.length > 0 && (
+              <span className="text-xs text-slate-500">
+                {selectedDashboards.length} dashboard{selectedDashboards.length === 1 ? "" : "s"} selected -- one rule per dashboard
+              </span>
+            )}
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>Dashboard</Label>
-            <Select value={dashboardId} onValueChange={(v) => setDashboardId(v ?? "")} disabled={submitting}>
-              <SelectTrigger>
-                <SelectValue placeholder={dashboards.length === 0 ? "No log dashboards yet" : "Pick a dashboard"} />
-              </SelectTrigger>
-              <SelectContent>
-                {dashboards.map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.name} — {d.bound_resource_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-slate-500">The alert covers exactly the namespaces, apps or containers the dashboard shows.</p>
-          </div>
+          <p className="text-xs text-slate-500">
+            Tick a folder to take all its dashboards, or pick dashboards one by one. Each alert covers exactly the namespaces, apps or
+            containers its dashboard shows.
+          </p>
+          {dashboards === null ? (
+            <p className="text-sm text-slate-500">Loading&hellip;</p>
+          ) : folders.length === 0 ? (
+            <p className="rounded-md border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+              No {logKind === "K8S" ? "Kubernetes" : "Docker"} log dashboards yet -- create one under Log Management &rsaquo;{" "}
+              {logKind === "K8S" ? "Kubernetes" : "Docker"} Log Explorer first.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              {folders.map((g) => {
+                const picked = g.dashboards.filter((d) => selectedDashboards.includes(d.id)).length;
+                return (
+                  <div key={g.key} className={`rounded-md border p-2.5 ${picked > 0 ? "border-sky-200 bg-sky-50/40" : "border-slate-200"}`}>
+                    <label className="flex items-center gap-2 text-sm font-medium text-slate-900">
+                      <Checkbox
+                        checked={picked === g.dashboards.length}
+                        onCheckedChange={(v) => toggleFolder(g, v === true)}
+                        disabled={submitting}
+                      />
+                      {g.name}
+                      <span className="text-xs font-normal text-slate-400">
+                        {g.workspace} · {picked > 0 ? `${picked}/${g.dashboards.length} selected` : `${g.dashboards.length} dashboard${g.dashboards.length === 1 ? "" : "s"}`}
+                      </span>
+                    </label>
+                    <div className="mt-1.5 ml-6 flex flex-col gap-1">
+                      {g.dashboards.map((d) => (
+                        <label key={d.id} className="flex items-center gap-2 text-xs text-slate-600">
+                          <Checkbox
+                            checked={selectedDashboards.includes(d.id)}
+                            onCheckedChange={(v) => setSelectedDashboards((cur) => toggle(cur, d.id, v === true))}
+                            disabled={submitting}
+                          />
+                          <span className="text-slate-800">{d.name}</span>
+                          <span className="text-slate-400">on {d.bound_resource_name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
