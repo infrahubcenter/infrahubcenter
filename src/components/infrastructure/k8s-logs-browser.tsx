@@ -76,7 +76,7 @@ export function K8sLogsBrowser({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
         <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto rounded-lg border border-slate-200 bg-white p-3">
           {groupedByNamespace.map(({ nsLabel, apps }) => (
             <div key={nsLabel}>
@@ -139,7 +139,7 @@ export function K8sLogsBrowser({
         </div>
 
         {selected ? (
-          <div className="flex flex-col gap-4 lg:flex-row">
+          <div className="flex min-w-0 flex-col gap-4">
             <div className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h3 className="font-medium text-slate-900">{podLabel(selected)}</h3>

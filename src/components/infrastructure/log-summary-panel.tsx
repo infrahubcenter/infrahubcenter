@@ -59,8 +59,10 @@ export function LogSummaryPanel({ result, windowLabel }: { result: LogSearchResu
   const categories = useMemo(() => (result ? topCategories(result) : []), [result]);
   const activity = useMemo(() => (result ? activityBuckets(result) : []), [result]);
 
+  // Sits under the logs (full width) so the log lines get the room; the
+  // tiles, activity chart and categories sit side by side on wide screens.
   return (
-    <div className="flex w-full flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4 lg:w-70">
+    <div className="flex w-full flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4">
       <div>
         <h3 className="text-sm font-semibold text-slate-900">Log Summary</h3>
         <p className="text-xs text-slate-500">{windowLabel}</p>
@@ -69,7 +71,7 @@ export function LogSummaryPanel({ result, windowLabel }: { result: LogSearchResu
       {!result ? (
         <p className="text-xs text-slate-500">Run a search in Log History, Error Logs, or Filter Logs to see a summary here.</p>
       ) : (
-        <>
+        <div className="grid gap-4 lg:grid-cols-3">
           <div className="grid grid-cols-2 gap-2">
             <SummaryTile label="Total" value={result.total} />
             <SummaryTile label="Healthy" value={result.counts.healthy} color="text-emerald-600" />
@@ -108,7 +110,7 @@ export function LogSummaryPanel({ result, windowLabel }: { result: LogSearchResu
               </ul>
             )}
           </div>
-        </>
+        </div>
       )}
     </div>
   );
