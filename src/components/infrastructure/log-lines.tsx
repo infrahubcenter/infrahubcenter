@@ -49,17 +49,21 @@ export const LOG_REFRESH_OPTIONS = [
 
 export type LogRefresh = (typeof LOG_REFRESH_OPTIONS)[number]["id"];
 
-export type LogSettings = { theme: LogTheme; size: number; font: LogFont; refresh: LogRefresh };
+// Where the newest line goes: at the bottom (like a terminal) or on top.
+export type LogOrder = "bottom" | "top";
+
+export type LogSettings = { theme: LogTheme; size: number; font: LogFont; refresh: LogRefresh; order: LogOrder };
 
 const KEYS = {
   theme: "infrahub:log-theme",
   size: "infrahub:log-font-size",
   font: "infrahub:log-font",
   refresh: "infrahub:log-refresh",
+  order: "infrahub:log-order",
 } as const;
 const CHANGE_EVENT = "infrahub:log-theme-change";
 
-const DEFAULTS: LogSettings = { theme: "dark", size: 13, font: "mono", refresh: "live" };
+const DEFAULTS: LogSettings = { theme: "dark", size: 13, font: "mono", refresh: "live", order: "bottom" };
 
 function read(key: string): string | null {
   try {
@@ -73,7 +77,7 @@ function read(key: string): string | null {
 let cached: { raw: string; value: LogSettings } | null = null;
 
 function readSettings(): LogSettings {
-  const raw = [read(KEYS.theme), read(KEYS.size), read(KEYS.font), read(KEYS.refresh)];
+  const raw = [read(KEYS.theme), read(KEYS.size), read(KEYS.font), read(KEYS.refresh), read(KEYS.order)];
   const joined = raw.join("|");
   if (cached?.raw === joined) return cached.value;
   const size = Number(raw[1]);
@@ -82,6 +86,7 @@ function readSettings(): LogSettings {
     size: (LOG_FONT_SIZES as readonly number[]).includes(size) ? size : DEFAULTS.size,
     font: LOG_FONTS.find((f) => f.id === raw[2])?.id ?? DEFAULTS.font,
     refresh: LOG_REFRESH_OPTIONS.find((r) => r.id === raw[3])?.id ?? DEFAULTS.refresh,
+    order: raw[4] === "top" ? "top" : "bottom",
   };
   cached = { raw: joined, value };
   return value;
@@ -119,7 +124,7 @@ export function LogThemeToggle({ theme, onToggle }: { theme: LogTheme; onToggle:
   );
 }
 
-// Text size (A- / A+), font and Light/Dark -- the same controls on every log panel.
+// Text size (A- / A+), font, newest-on-top/bottom and Light/Dark -- the same controls on every log panel.
 export function LogDisplayControls({ settings, onChange }: { settings: LogSettings; onChange: (patch: Partial<LogSettings>) => void }) {
   const idx = LOG_FONT_SIZES.indexOf(settings.size as (typeof LOG_FONT_SIZES)[number]);
   return (
@@ -161,6 +166,15 @@ export function LogDisplayControls({ settings, onChange }: { settings: LogSettin
               <span style={{ fontFamily: f.stack }}>{f.label}</span>
             </SelectItem>
           ))}
+        </SelectContent>
+      </Select>
+      <Select value={settings.order} onValueChange={(v) => v && onChange({ order: v as LogOrder })}>
+        <SelectTrigger size="sm" className="w-40" title="Where new log lines appear" aria-label="Log order">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="bottom">Newest at bottom</SelectItem>
+          <SelectItem value="top">Newest on top</SelectItem>
         </SelectContent>
       </Select>
       <LogThemeToggle theme={settings.theme} onToggle={() => onChange({ theme: settings.theme === "dark" ? "light" : "dark" })} />
@@ -275,7 +289,7 @@ function formatCountdown(s: number): string {
   return s >= 60 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s` : `${s}s`;
 }
 
-// Pause/Resume plus the refresh interval -- replaces a plain Disconnect.
+// Pause/Resume plus the refresh interval.
 export function LogRefreshControls({
   buffer,
   refresh,

@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { RefreshCw } from "lucide-react";
 import { ExpandToggleButton, ResizeHandle, useExpandablePanel } from "@/components/infrastructure/expandable-panel";
-import { Button } from "@/components/ui/button";
 import { type VMAgentLogsInboundFrame, type LogSeverity } from "@/lib/api";
 import {
   LogDisplayControls,
@@ -24,11 +22,13 @@ type ViewerLine = { text: string; severity: LogSeverity; category?: string; sugg
 // mirror of DockerLogViewer, just fed from vm-agent/logs/stream instead
 // of a Docker container's stream. Live-only: nothing is stored server-side
 // or in this component's own state beyond what's currently rendered.
+const RECONNECT_DELAY_MS = 5000;
+
 export function VMLogViewer({ streamUrl, vmName }: { streamUrl: string; vmName: string }) {
   const [state, setState] = useState<ViewerState>("connecting");
   const [message, setMessage] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const boxRef = useRef<HTMLDivElement | null>(null);
   const autoScrollRef = useRef(true);
   const { fullscreen, toggleFullscreen, contentStyle, contentClassName, panelClassName, resizeHandleProps } = useExpandablePanel(550);
   const [settings, updateSettings] = useLogSettings();
@@ -37,13 +37,10 @@ export function VMLogViewer({ streamUrl, vmName }: { streamUrl: string; vmName: 
   // the stream itself stays connected.
   const buffer = useBufferedLines<ViewerLine>(settings.refresh);
   const { lines, push: pushLine, reset: resetLines } = buffer;
-  // Bumping this forces the connect effect below to tear down whatever
-  // WebSocket it has (open, closed, or stuck) and open a fresh one --
-  // the manual "Reconnect" escape hatch for "I'm connected but not
-  // seeing any log output" (a live-tail genuinely has nothing to show
-  // until a new line is written, so seeing none isn't itself an error;
-  // this is for when a viewer wants to force a clean retry anyway).
-  const [reconnectKey, setReconnectKey] = useState(0);
+  const newestOnTop = settings.order === "top";
+  // Bumping this re-runs the connect effect below: a dropped stream
+  // reconnects by itself a few seconds later.
+  const [reconnectNonce, setReconnectNonce] = useState(0);
 
   useEffect(() => {
     // Resets stale state from a previously viewed VM before opening the
@@ -60,6 +57,8 @@ export function VMLogViewer({ streamUrl, vmName }: { streamUrl: string; vmName: 
     // second (real) connection has already opened, stomping "connected"
     // back to "closed" even though the live connection is fine.
     let cancelled = false;
+    let failed = false;
+    let retry: number | undefined;
     const ws = new WebSocket(streamUrl);
     wsRef.current = ws;
 
@@ -81,6 +80,7 @@ export function VMLogViewer({ streamUrl, vmName }: { streamUrl: string; vmName: 
         };
         pushLine(entry);
       } else if (frame.type === "error") {
+        failed = true;
         setState("error");
         setMessage(frame.message);
       } else if (frame.type === "closed") {
@@ -90,6 +90,8 @@ export function VMLogViewer({ streamUrl, vmName }: { streamUrl: string; vmName: 
     ws.onclose = () => {
       if (cancelled) return;
       setState((prev) => (prev === "error" ? prev : "closed"));
+      // Not for errors (no access, app gone): retrying wouldn't help.
+      if (!failed) retry = window.setTimeout(() => setReconnectNonce((n) => n + 1), RECONNECT_DELAY_MS);
     };
     ws.onerror = () => {
       // No usable detail on this event by design -- onclose (which
@@ -98,20 +100,19 @@ export function VMLogViewer({ streamUrl, vmName }: { streamUrl: string; vmName: 
 
     return () => {
       cancelled = true;
+      window.clearTimeout(retry);
       ws.close();
       wsRef.current = null;
     };
-  }, [streamUrl, reconnectKey, resetLines, pushLine]);
+  }, [streamUrl, reconnectNonce, resetLines, pushLine]);
 
+  // Follow new lines -- at the bottom or the top, per the viewer's
+  // order -- unless they've scrolled away to read something.
   useEffect(() => {
-    if (autoScrollRef.current) {
-      bottomRef.current?.scrollIntoView({ block: "end" });
-    }
-  }, [lines]);
+    const el = boxRef.current;
+    if (el && autoScrollRef.current) el.scrollTop = newestOnTop ? 0 : el.scrollHeight;
+  }, [lines, newestOnTop]);
 
-  function handleReconnect() {
-    setReconnectKey((k) => k + 1);
-  }
 
   return (
     <div className={`flex flex-col gap-2 ${panelClassName}`}>
@@ -125,15 +126,12 @@ export function VMLogViewer({ streamUrl, vmName }: { streamUrl: string; vmName: 
           <span className="text-slate-600">
             {state === "connecting" && "Connecting…"}
             {state === "connected" && `Streaming logs from ${vmName}`}
-            {state === "closed" && "Disconnected"}
+            {state === "closed" && "Disconnected — reconnecting…"}
             {state === "error" && (message ?? "Connection error")}
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <LogRefreshControls buffer={buffer} refresh={settings.refresh} onRefreshChange={(refresh) => updateSettings({ refresh })} />
-          <Button variant="outline" size="sm" onClick={handleReconnect} title="Force a fresh reconnect -- use this if you expect log output but aren't seeing any">
-            <RefreshCw className="mr-1 h-3.5 w-3.5" /> Reconnect
-          </Button>
           <LogDisplayControls settings={settings} onChange={updateSettings} />
           <ExpandToggleButton fullscreen={fullscreen} onToggle={toggleFullscreen} />
         </div>
@@ -141,19 +139,19 @@ export function VMLogViewer({ streamUrl, vmName }: { streamUrl: string; vmName: 
       <div
         style={{ ...contentStyle, ...logBoxStyle(settings) }}
         className={`w-full overflow-y-auto py-1 ${logBoxClass(theme)} ${contentClassName}`}
+        ref={boxRef}
         onScroll={(e) => {
           const el = e.currentTarget;
-          autoScrollRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          autoScrollRef.current = newestOnTop ? el.scrollTop < 40 : el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
       >
         {lines.length === 0 ? (
           <p className={`px-3 py-2 text-xs ${logMutedClass(theme)}`}>{state === "connected" ? "Waiting for log output…" : ""}</p>
         ) : (
-          lines.map((line, i) => (
+          (newestOnTop ? [...lines].reverse() : lines).map((line, i) => (
             <LogLineRow key={i} text={line.text} severity={line.severity} suggestion={line.suggestion} receivedAt={line.receivedAt} theme={theme} />
           ))
         )}
-        <div ref={bottomRef} />
       </div>
       <ResizeHandle hidden={fullscreen} {...resizeHandleProps} />
     </div>

@@ -259,7 +259,8 @@ export function LogSearchPanel({
             {result.lines.length === 0 ? (
               <p className={`px-3 py-2 text-xs ${logMutedClass(theme)}`}>No matching log lines in the retained history.</p>
             ) : (
-              [...result.lines].reverse().map((line) => (
+              // The API pages newest first; "Newest at bottom" flips that.
+              (settings.order === "top" ? result.lines : [...result.lines].reverse()).map((line) => (
                 <LogLineRow key={line.id} text={line.line} severity={line.severity} suggestion={line.suggestion} loggedAt={line.logged_at} theme={theme} />
               ))
             )}
