@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Cloud, Container, Database, FileText, HardDrive, Network, Pencil, Plus, Server, SlidersHorizontal, Trash2 } from "lucide-react";
 import { RouteGuard } from "@/components/auth/route-guard";
 import { ConfirmDialog } from "@/components/infrastructure/confirm-dialog";
@@ -81,7 +81,6 @@ import {
 // Resource Type dropdown order -- the sidebar's own order.
 const RESOURCE_CHOICE_ORDER: ResourceTypeChoice[] = [
   "VM_INVENTORY",
-  "VM_HOST_METRICS",
   "DATABASE",
   "OBJECT_STORAGE",
   "DOCKER_HOST",
@@ -224,15 +223,25 @@ export function AlertRulesContent() {
     return "";
   }
 
+  // Rules for the same resource (and the same container, pod or log
+  // dashboard under it) share one header row instead of repeating the
+  // resource name on every rule.
+  function groupByTarget(items: AlertRuleListItem[]) {
+    const groups = new Map<string, { name: string; detail: string; items: AlertRuleListItem[] }>();
+    for (const item of items) {
+      const detail = targetDetail(item);
+      const key = `${item.rule.resource_id}|${detail}`;
+      const g = groups.get(key) ?? { name: item.resource_name, detail, items: [] };
+      g.items.push(item);
+      groups.set(key, g);
+    }
+    return [...groups.entries()];
+  }
+
   function renderRow(item: AlertRuleListItem) {
-    const detail = targetDetail(item);
     return (
       <TableRow key={item.rule.id}>
-        <TableCell>
-          <div className="font-medium text-slate-900">{item.resource_name}</div>
-          {detail && <div className="text-xs text-slate-500">{detail}</div>}
-        </TableCell>
-        <TableCell className="text-slate-600">
+        <TableCell className="pl-8 text-slate-600">
           <div className="flex items-center gap-1.5">
             {LOG_RULE_LABELS[item.rule.alert_type] ?? item.rule.alert_type.replace(/_/g, " ")}
             {(item.rule.alert_type.endsWith("_HIGH_ERROR_LOGS") || item.rule.monitoring_dashboard_id) && (
@@ -408,8 +417,7 @@ export function AlertRulesContent() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Resource</TableHead>
-                      <TableHead>Alert Type</TableHead>
+                      <TableHead className="pl-8">Alert Type</TableHead>
                       <TableHead>Condition</TableHead>
                       <TableHead>Duration</TableHead>
                       <TableHead>Severity</TableHead>
@@ -418,7 +426,22 @@ export function AlertRulesContent() {
                       <TableHead />
                     </TableRow>
                   </TableHeader>
-                  <TableBody>{section.items.map(renderRow)}</TableBody>
+                  <TableBody>
+                    {groupByTarget(section.items).map(([key, g]) => (
+                      <Fragment key={key}>
+                        <TableRow className="bg-slate-50 hover:bg-slate-50">
+                          <TableCell colSpan={7} className="py-2">
+                            <span className="font-medium text-slate-900">{g.name}</span>
+                            {g.detail && <span className="ml-2 text-xs text-slate-500">{g.detail}</span>}
+                            <span className="ml-2 text-xs text-slate-400">
+                              {g.items.length} rule{g.items.length === 1 ? "" : "s"}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                        {g.items.map(renderRow)}
+                      </Fragment>
+                    ))}
+                  </TableBody>
                 </Table>
               </div>
             </div>
@@ -524,9 +547,14 @@ export function NewAlertRuleForm({
     }
   }, [resourceKind, resourceId]);
 
-  const choiceVMs = vms.filter((vm) => vmChoiceFor(vm) === typeChoice);
+  // Compute Inventory and Host Metrics & Logs VMs share one tile -- the
+  // same alert types apply to both.
+  const choiceVMs = vms;
+  const vmChoice = typeChoice === "VM_INVENTORY" || typeChoice === "VM_HOST_METRICS";
+  const itemLabel = vmChoice ? "VM" : RESOURCE_TYPE_CHOICE_ITEM[typeChoice];
+  const whereLabel = vmChoice ? "Compute › Compute Inventory or Host Metrics & Logs" : RESOURCE_TYPE_CHOICE_WHERE[typeChoice];
   const resourceCounts: Record<ResourceTypeChoice, number> = {
-    VM_INVENTORY: vms.filter((vm) => vmChoiceFor(vm) === "VM_INVENTORY").length,
+    VM_INVENTORY: vms.length,
     VM_HOST_METRICS: vms.filter((vm) => vmChoiceFor(vm) === "VM_HOST_METRICS").length,
     DATABASE: databases.length,
     OBJECT_STORAGE: objectStorages.length,
@@ -589,7 +617,9 @@ export function NewAlertRuleForm({
                 }`}
               >
                 <Icon className={`h-4 w-4 ${active ? "text-sky-700" : "text-slate-500"}`} />
-                <span className="text-sm font-medium text-slate-900">{RESOURCE_TYPE_CHOICE_LABEL[c]}</span>
+                <span className="text-sm font-medium text-slate-900">
+                  {c === "VM_INVENTORY" ? "Compute Inventory · Host Metrics" : RESOURCE_TYPE_CHOICE_LABEL[c]}
+                </span>
                 <span className="text-xs text-slate-500">
                   {resourceCounts[c]} {resourceCounts[c] === 1 ? "resource" : "resources"}
                 </span>
@@ -847,7 +877,7 @@ export function NewAlertRuleForm({
         {!lockedResourceId && (
           <>
             <div className="flex flex-col gap-1.5 sm:col-span-2">
-              <Label>{RESOURCE_TYPE_CHOICE_ITEM[typeChoice]}</Label>
+              <Label>{itemLabel}</Label>
               <Select
                 value={resourceId}
                 onValueChange={(v) => {
@@ -861,7 +891,7 @@ export function NewAlertRuleForm({
               >
                 <SelectTrigger className="w-full">
                   <SelectValue
-                    placeholder={resourceCounts[typeChoice] === 0 ? `No ${RESOURCE_TYPE_CHOICE_ITEM[typeChoice]} registered yet` : `Select a ${RESOURCE_TYPE_CHOICE_ITEM[typeChoice]}`}
+                    placeholder={resourceCounts[typeChoice] === 0 ? `No ${itemLabel} registered yet` : `Select a ${itemLabel}`}
                   />
                 </SelectTrigger>
                 <SelectContent>
@@ -898,7 +928,7 @@ export function NewAlertRuleForm({
                 </SelectContent>
               </Select>
               {resourceCounts[typeChoice] === 0 && (
-                <p className="text-xs text-slate-500">Register one under {RESOURCE_TYPE_CHOICE_WHERE[typeChoice]}.</p>
+                <p className="text-xs text-slate-500">Register one under {whereLabel}.</p>
               )}
             </div>
           </>
